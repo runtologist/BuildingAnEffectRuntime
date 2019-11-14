@@ -5,11 +5,31 @@ import zio.{Fiber => ZioFiber}
 import zio.IO
 import zio.UIO
 import zio.ZIO
-import zio.internal.OneShot
 
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 import scala.util.Try
+
+object Fiber {
+
+  type Stack = List[Any => IO[Any, Any]]
+
+  type Interpreter =
+    PartialFunction[ // maybe incomplete
+      (IO[Any, Any], Any, Stack, Fiber[Any, Any]),
+      Either[
+        Option[Exit[Any, Any]], // suspend execution or optionally terminate with an Exit
+        (Any, Stack) // or continue with new state and stack
+      ]
+    ]
+
+  def notImplemented: Interpreter = {
+    case (other, _, _, _) =>
+      val e = new IllegalStateException(s"not implemented: ${other.getClass}")
+      Left(Some(Exit.die(e)))
+  }
+
+}
 
 class Fiber[E, A](
     val interpreter: Fiber.Interpreter,
@@ -75,45 +95,4 @@ class Fiber[E, A](
 
   // not implemented
   override def inheritFiberRefs: UIO[Unit] = UIO.unit
-}
-
-object Fiber {
-
-  type Stack = List[Any => IO[Any, Any]]
-
-  type Interpreter =
-    PartialFunction[ // maybe incomplete
-      (IO[Any, Any], Any, Stack, Fiber[Any, Any]),
-      Either[
-        Option[Exit[Any, Any]], // suspend execution or optionally terminate with an Exit
-        (Any, Stack) // or continue with new state and stack
-      ]
-    ]
-
-  def notImplemented: Interpreter = {
-    case (other, _, _, _) =>
-      val e = new IllegalStateException(s"not implemented: ${other.getClass}")
-      Left(Some(Exit.die(e)))
-  }
-
-}
-
-class Runtime(interpreter: Fiber.Interpreter) {
-
-  def unsafeRunAsync[E, A](
-      io: => IO[E, A]
-  )(k: Exit[E, A] => Unit)(implicit ec: ExecutionContext): Unit = {
-    val fiber = new Fiber(interpreter, ec)
-    fiber.register(k)
-    fiber.schedule(io, List(_ => io))
-  }
-
-  def unsafeRun[E, A](
-      io: => IO[E, A]
-  )(implicit ec: ExecutionContext): Exit[E, A] = {
-    val oneShot = OneShot.make[Exit[E, A]]
-    unsafeRunAsync(io)(oneShot.set)
-    oneShot.get()
-  }
-
 }

@@ -12,7 +12,7 @@ revealOptions:
 
 ## Simon Schenk
 
-<img  src="simon--rotated--small.jpg" style="float:right;transform:rotate(45deg);max-width:20%">
+<img  src="img/simon--rotated--small.jpg" style="float:right;transform:rotate(45deg);max-width:20%">
 
 CTO at Risk42 (https://risk42.com)
 
@@ -97,6 +97,8 @@ Hello, FooBar!
 
 ## errors
 
+Expected Failure Modes
+
 ```scala
 trait NameError
 case object TooShort extends NameError
@@ -114,7 +116,41 @@ val r: Exit[NameError, String] =
 
 ---
 
+## Defects
+
+<img src="img/bad-bug.svg" style="width:50%"/>
+
+---
+
+## Exit
+
+```scala
+sealed trait Exit[+E, +A]
+case class Success[A](v: A)           extends Exit[Nothing, A]
+case class Failure[E](c: zio.Cause[E])extends Exit[E, Nothing]
+
+sealed trait Cause[+E]
+case class  Fail[E](value: E)     extends Cause[E]
+case class  Die(value: Throwable) extends Cause[Nothing]
+case object Interrupt             extends Cause[Nothing] 
+...
+```
+
+---
+
 ### interruption
+
+```scala
+def race[E, A](io1: IO[E, A], io2: IO[E, A]): IO[E, A] =
+  for {
+    p <- Promise.make
+    fiber1 <- p.complete(io1).fork
+    fiber2 <- p.complete(io2).fork
+    _ <- (fiber1.await *> fiber2.interrupt).fork
+    _ <- (fiber2.await *> fiber1.interrupt).fork
+    r <- p.await
+  } yield r
+```
 
 ---
 
@@ -178,19 +214,15 @@ Example: join
 
 ## What we want to build
 
-### Take representation of effects from ZIO
+```scala
+def unsafeRunAsync[E, A](
+  io: => IO[E, A]
+)(
+  k: Exit[E, A] => Unit
+): Unit
 
- ```scala
- UIO[A] // Produces an A, cannot fail
- UIO[Nothing] // Never terminates
- IO[E, A] // Produces an A or fails with an E.
- def IO.fail(e): IO[E, Nothing] // Never produces anything
- Task[A] =:= IO[Throwable, A]
- ```
-
-notes:
-
-Show implementation of Succeed / Fail / FlatMap
+def unsafeRun[E, A](io: => IO[E, A]): Exit[E, A]
+```
 
 ---
 
@@ -204,9 +236,171 @@ Show implementation of Succeed / Fail / FlatMap
 
  Show API of Runtime
  
+ ---
+ 
+ ### Take representation of effects from ZIO
+
+ ```scala
+ UIO[A] // Produces an A, cannot fail
+ IO[E, A] // Produces an A or fails with an E.
+ ```
+
+
+---
+
+### Effect ADT
+
+```scala
+def flatMap[R1 <: R, E1 >: E, B](k: A => ZIO[R1, E1, B]): ZIO[R1, E1, B] =
+    new ZIO.FlatMap(self, k)
+def succeed[A](a: A): UIO[A] = new ZIO.Succeed(a)
+def fork: ZIO[R, Nothing, Fiber[E, A]] = new ZIO.Fork(self)
+```
+
+---
+
+### Effect ADT #2
+
+```scala
+FlatMap           Succeed            EffectTotal              
+Fail              Fold               InterruptStatus          
+CheckInterrupt    EffectPartial      EffectAsync              
+Fork              SuperviseStatus    EffectSuspendPartialWith 
+Descriptor        FiberRefNew        Lock                     
+FiberRefModify           
+````
+
+---
+
+### Effect ADT #2
+
+```scala
+* FlatMap         * Succeed          EffectTotal              
+* Fail            Fold               InterruptStatus          
+CheckInterrupt    EffectPartial      * EffectAsync              
+* Fork            SuperviseStatus    EffectSuspendPartialWith 
+Descriptor        FiberRefNew        Lock                     
+FiberRefModify           
+````
+
 ---
 
 # example domain
+
+Natural numbers in Peano encoding
+
+```scala
+
+sealed trait N
+case object Zero extends N
+case class Cons(n: N) extends N
+
+@tailrec
+def equals(n: N, m: N): Boolean =
+  (n, m) match {
+    case (Zero, Zero)         => true
+    case (Cons(nn), Cons(mm)) => equals(nn, mm)
+    case _                    => false
+  }
+```
+
+---
+
+## naive encoding of add, mul
+
+```scala
+def add(n: N, m: N): N =
+  m match {
+    case Zero     => n
+    case Cons(mm) => Cons(add(n, mm))
+  }
+
+def mul(n: N, m: N): N =
+  m match {
+    case Zero     => Zero
+    case Cons(mm) => add(mul(n, mm), n)
+  }
+```
+
+---
+
+## safe encoding of add, mul
+
+```scala
+def add(n: N, m: N): UIO[N] =
+  m match {
+    case Zero     => UIO.succeed(n)
+    case Cons(mm) => add(n, mm).map(Cons)
+  }
+
+def mul(n: N, m: N): UIO[N] =
+  m match {
+    case Zero     => UIO.succeed(Zero)
+    case Cons(mm) => mul(n, mm).flatMap(o => add(o, n))
+  }
+```
+
+---
+
+## sub, div
+
+```scala
+sealed trait Err
+case object Neg extends Err
+case object Div0 extends Err
+
+def sub(n: N, m: N): IO[Neg.type, N] =
+  (n, m) match {
+    case (_, Zero)            => IO.succeed(n)
+    case (Zero, _)            => IO.fail(Neg)
+    case (Cons(nn), Cons(mm)) => sub(nn, mm)
+  }
+
+def div(n: N, m: N): IO[Div0.type, N] 
+```
+
+---
+
+## parallel addAll
+
+```scala
+def addAll(ns: N*): UIO[N] =
+  ns.toList match {
+    case Nil      => UIO.succeed(Zero)
+    case n :: Nil => UIO.succeed(n)
+    case list =>
+      val (l, r) = list.splitAt(ns.length / 2)
+      for {
+        lsf <- addAll(l: _*).fork
+        rsf <- addAll(r: _*).fork
+        ls <- lsf.join
+        rs <- rsf.join
+        s <- AddMul.add(ls, rs)
+      } yield s
+  }
+```
+
+---
+
+## parallel cooperative addAll
+
+```scala
+def addAll(ns: N*): UIO[N] =
+  ns.toList match {
+    case Nil      => UIO.succeed(Zero)
+    case n :: Nil => UIO.succeed(n)
+    case list =>
+      val (l, r) = list.splitAt(ns.length / 2)
+      for {
+        lsf <- addAll(l: _*).fork
+        rsf <- addAll(r: _*).fork
+        ls <- lsf.join
+        rs <- rsf.join
+        s <- AddMul.add(ls, rs)
+        _ <- ZIO.yieldNow
+      } yield s
+  }
+```
 
 ---
 

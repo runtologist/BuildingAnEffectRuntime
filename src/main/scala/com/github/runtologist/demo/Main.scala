@@ -1,12 +1,14 @@
-package com.github.runtologist.runtime
+package com.github.runtologist.demo
 
 import com.github.runtologist.naturalNumbers._
 import com.github.runtologist.naturalNumbers.N._
+import com.github.runtologist.runtime.FairInterpreter
+import com.github.runtologist.runtime.Runtime
 import zio.ZioInterpreters._
 
 import scala.concurrent.ExecutionContext.global
 
-object Main extends scala.App {
+object DemoAddAllCoop extends scala.App {
   implicit val ec = global
 
   val interpreter =
@@ -19,10 +21,6 @@ object Main extends scala.App {
 
   val r =
     runtime.unsafeRun(
-      // AddMul.add(
-      //   Cons(Cons(Zero)),
-      //   Cons(Cons(Cons(Zero)))
-      // )
       AddAllCoop
         .addAll(
           Cons(Cons(Zero)),
