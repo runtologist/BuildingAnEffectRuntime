@@ -1,9 +1,8 @@
 package zio
 
 import com.github.runtologist.runtime.{Fiber => PoorMansFiber}
-import com.github.runtologist.runtime.Fiber.Stack
 
-object Interpreters {
+object ZioInterpreters {
 
   val succeedFlatMap: PoorMansFiber.Interpreter = {
     case (s: ZIO.Succeed[_], _, stack, _) => Right((s.value, stack))
@@ -42,33 +41,5 @@ object Interpreters {
       fiber.schedule((), stack)
       Left(None)
   }
-
-  def fairInterpreter(
-      yieldAfter: Long,
-      underlying: PoorMansFiber.Interpreter
-  ): PoorMansFiber.Interpreter =
-    new PoorMansFiber.Interpreter {
-      var count = yieldAfter
-      override def apply(
-          param: (IO[Any, Any], Any, Stack, PoorMansFiber[Any, Any])
-      ): Either[
-        Option[Exit[Any, Any]], // suspend execution or optionally terminate with an Exit
-        (Any, Stack) // or continue with new state and stack
-      ] = {
-        underlying.apply(param) match {
-          case l @ Left(_) => l
-          case Right((v, stack)) if count < 1 =>
-            count = yieldAfter
-            param._4.schedule(v, stack)
-            Left(None)
-          case r @ Right(_) =>
-            count -= 1
-            r
-        }
-      }
-      override def isDefinedAt(
-          param: (IO[Any, Any], Any, Stack, PoorMansFiber[Any, Any])
-      ): Boolean = underlying.isDefinedAt(param)
-    }
 
 }

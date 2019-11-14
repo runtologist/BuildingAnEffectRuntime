@@ -2,20 +2,18 @@ package com.github.runtologist.runtime
 
 import zio.Exit
 import zio.{Fiber => ZioFiber}
-import zio.Interpreters
 import zio.IO
+import zio.UIO
 import zio.ZIO
+import zio.internal.OneShot
 
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 import scala.util.Try
-import zio.UIO
-import zio.internal.OneShot
 
 class Fiber[E, A](
     val interpreter: Fiber.Interpreter,
-    val ec: ExecutionContext,
-    val yieldIn: Long = 10
+    val ec: ExecutionContext
 ) extends ZioFiber[E, A] {
 
   @volatile private var result: Option[Exit[E, A]] = None
@@ -26,17 +24,13 @@ class Fiber[E, A](
     listeners ::= callback
 
   override def interrupt: UIO[Exit[E, A]] = {
-    println("set interrupted true")
     interrupted = true
     await
   }
 
   @tailrec
-  private def step(
-      v: Any,
-      stack: List[Any => IO[Any, Any]]
-  ): Unit = {
-    println(s"step $v ${stack.size}")
+  private def step(v: Any, stack: Fiber.Stack): Unit = {
+    println(s"step v=$v stackSize=${stack.size}")
     val next =
       for {
         _ <- Either.cond(!interrupted, (), Some(Exit.interrupt))
@@ -49,7 +43,7 @@ class Fiber[E, A](
       } yield next
     next match {
       case Left(None) =>
-        println("suspended")
+        println("suspending")
       case Left(Some(exit)) =>
         println(s"done: $exit")
         val typedExit = exit.asInstanceOf[Exit[E, A]]
@@ -58,14 +52,12 @@ class Fiber[E, A](
           listeners.foreach(_(typedExit))
         }
       case Right((v, stack)) =>
-        println("next")
         step(v, stack)
     }
   }
 
-  def schedule(v: Any, stack: List[Any => IO[Any, Any]]): Unit = {
+  def schedule(v: Any, stack: List[Any => IO[Any, Any]]): Unit =
     ec.execute(() => step(v, stack))
-  }
 
   // implement Fiber trait
 
@@ -103,31 +95,14 @@ object Fiber {
       val e = new IllegalStateException(s"not implemented: ${other.getClass}")
       Left(Some(Exit.die(e)))
   }
+
 }
 
-object RuntimeSucceedFlatMap {
+class Runtime(interpreter: Fiber.Interpreter) {
 
   def unsafeRunAsync[E, A](
       io: => IO[E, A]
   )(k: Exit[E, A] => Unit)(implicit ec: ExecutionContext): Unit = {
-    val fiber = new Fiber(Interpreters.succeedFlatMap, ec)
-    fiber.register(k)
-    fiber.schedule(io, List(_ => io))
-  }
-
-}
-
-object FullRuntime {
-
-  def unsafeRunAsync[E, A](
-      io: => IO[E, A]
-  )(k: Exit[E, A] => Unit)(implicit ec: ExecutionContext): Unit = {
-    import zio.Interpreters._
-    val interpreter =
-      fairInterpreter(
-        yieldAfter = 10,
-        succeedFlatMap orElse fail orElse forkEffectAsync orElse doYield
-      )
     val fiber = new Fiber(interpreter, ec)
     fiber.register(k)
     fiber.schedule(io, List(_ => io))
