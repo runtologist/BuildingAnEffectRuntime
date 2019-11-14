@@ -1,10 +1,11 @@
-package com.github.runtologist.pmr
+package com.github.runtologist.naturalNumbers
 
 import scala.annotation.tailrec
 
-object Algebra {
+sealed trait N
 
-  trait N
+object N {
+
   case object Zero extends N
   case class Cons(n: N) extends N
 
@@ -14,18 +15,6 @@ object Algebra {
       case (Zero, Zero)         => true
       case (Cons(nn), Cons(mm)) => equals(nn, mm)
       case _                    => false
-    }
-
-  def add(n: N, m: N): N =
-    m match {
-      case Zero     => n
-      case Cons(mm) => Cons(add(n, mm))
-    }
-
-  def mul(n: N, m: N): N =
-    m match {
-      case Zero     => Zero
-      case Cons(mm) => add(mul(n, mm), n)
     }
 
 }
