@@ -211,8 +211,6 @@ example: for { _ <- sleep *> prinlnt; _<-readln } ()
 Example: join
 
 
-# lazy (vs future)
-
 ---
 
 ## What we want to build
@@ -501,11 +499,34 @@ class Fiber[E, A](interpreter: Interpreter) {
 }
 ```
 
+
 ---
 
-## Fiber & Runtime
+## Fiber
 
 notes: Code walkthrough
+
+---
+
+## Runtime
+
+```scala
+class Runtime(interpreter: Interpreter)(implicit ec: ExecutionContext) {
+
+  def unsafeRunAsync[E, A](io: => IO[E, A])(k: Exit[E, A] => Unit): Unit = {
+    val fiber = new Fiber(interpreter, ec)
+    fiber.register(k)
+    fiber.schedule(io, List(_ => io))
+  }
+
+  def unsafeRun[E, A](io: => IO[E, A]): Exit[E, A] = {
+    val oneShot = OneShot.make[Exit[E, A]]
+    unsafeRunAsync(io)(oneShot.set)
+    oneShot.get()
+  }
+
+}
+```
 
 ---
 
@@ -613,6 +634,12 @@ class FairInterpreter(underlying: Interpreter)
 ## FullDemo
 
 `bloop run runtime -m com.github.runtologist.demo.DemoAllAdd`
+
+---
+
+## interruption
+
+TODO
 
 ---
 
