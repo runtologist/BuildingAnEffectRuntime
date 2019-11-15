@@ -3,7 +3,7 @@ title: Build yourself an effect system
 theme: black
 highlightTheme: vs2015
 revealOptions:
-    transition: 'fade'
+  transition: 'fade'
 ---
 
 # Build yourself an effect system
@@ -59,12 +59,14 @@ val future: Future[Unit] =
 // still does nothing
 val readName = 
   Console.putStrLn("What's your name?") *> Console.readStrLn
+
 // still nothing
 val validName =
-  readName.retry(Schedule.doUntil(_.length > 2))
+  readName.retry(Schedule.doUntil(_.length > 3))
+
 // and still nothing
 val program: ZIO[Console, Nothing, Unit] =
-  name.flatMap(name => Console.putStrLn(s"Hello, $name!"))
+  validName.flatMap(name => Console.putStrLn(s"Hello, $name!"))
 ```
 
 ---
@@ -74,10 +76,7 @@ val program: ZIO[Console, Nothing, Unit] =
 effects must be run in order to do anything 
 
 ```scala
-val readName = 
-  Console.putStrLn("What's your name?") *> Console.readStrLn
-val validName =
-  readName.retry(Schedule.doUntil(_.length > 3))
+
 val program =
   name.flatMap(name => Console.putStrLn(s"Hello, $name!"))
 
@@ -116,7 +115,7 @@ val r: Exit[NameError, String] =
 
 ---
 
-## Defects
+## vs Defects
 
 <img src="img/bad-bug.svg" style="width:50%"/>
 

@@ -15,8 +15,13 @@ object Fiber {
   type Stack = List[Any => IO[Any, Any]]
 
   type Interpreter =
-    PartialFunction[ // maybe incomplete
-      (IO[Any, Any], Any, Stack, Fiber[Any, Any]),
+    PartialFunction[ // may interpret just part of the ADT
+      (
+          IO[Any, Any], // the next IO to interpret
+          Any, // the current input parameter
+          Stack, // the remainder of the stack
+          Fiber[Any, Any] // the current fiber
+      ),
       Either[
         Option[Exit[Any, Any]], // suspend execution or optionally terminate with an Exit
         (Any, Stack) // or continue with new state and stack
