@@ -9,26 +9,31 @@ import zio.ZIO
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 import scala.util.Try
+import scala.util.Random
 
 object Fiber {
 
   type Stack = List[Any => IO[Any, Any]]
 
+  type InterpreterParams =
+    (
+        IO[Any, Any], // the next IO to interpret
+        Any, // the current input parameter
+        Stack, // the remainder of the stack
+        Fiber[Any, Any] // the current fiber
+    )
+  type Interpretation =
+    Either[
+      Option[Exit[Any, Any]], // suspend execution (None) or terminate with an Exit
+      (Any, Stack) // or continue with new state and stack
+    ]
   type Interpreter =
     PartialFunction[ // may interpret just part of the ADT
-      (
-          IO[Any, Any], // the next IO to interpret
-          Any, // the current input parameter
-          Stack, // the remainder of the stack
-          Fiber[Any, Any] // the current fiber
-      ),
-      Either[
-        Option[Exit[Any, Any]], // suspend execution or optionally terminate with an Exit
-        (Any, Stack) // or continue with new state and stack
-      ]
+      InterpreterParams,
+      Interpretation
     ]
 
-  def notImplemented: Interpreter = {
+  val notImplemented: Interpreter = {
     case (other, _, _, _) =>
       val e = new IllegalStateException(s"not implemented: ${other.getClass}")
       Left(Some(Exit.die(e)))
@@ -40,6 +45,8 @@ class Fiber[E, A](
     val interpreter: Fiber.Interpreter,
     val ec: ExecutionContext
 ) extends ZioFiber[E, A] {
+
+  val id: Int = Random.nextInt(Int.MaxValue)
 
   @volatile private var result: Option[Exit[E, A]] = None
   @volatile private var interrupted: Boolean = false
@@ -55,7 +62,7 @@ class Fiber[E, A](
 
   @tailrec
   private def step(v: Any, stack: Fiber.Stack): Unit = {
-    println(s"step v=$v stackSize=${stack.size}")
+    println(s"$id: step v=$v stackSize=${stack.size}")
     val next =
       for {
         _ <- Either.cond(!interrupted, (), Some(Exit.interrupt))
@@ -68,9 +75,9 @@ class Fiber[E, A](
       } yield next
     next match {
       case Left(None) =>
-        println("suspending")
+        println(s"$id: suspending")
       case Left(Some(exit)) =>
-        println(s"done: $exit")
+        println(s"$id: done: $exit")
         val typedExit = exit.asInstanceOf[Exit[E, A]]
         result.synchronized {
           result = Some(typedExit)
@@ -81,7 +88,7 @@ class Fiber[E, A](
     }
   }
 
-  def schedule(v: Any, stack: List[Any => IO[Any, Any]]): Unit =
+  def schedule(v: Any, stack: Fiber.Stack): Unit =
     ec.execute(() => step(v, stack))
 
   // implement Fiber trait

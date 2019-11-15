@@ -1,12 +1,16 @@
 ---
 title: Build yourself an effect system
-theme: black
-highlightTheme: vs2015
+theme: night
+highlightTheme: hybrid
+css: css/fullscreen.css
+#width: '100%'
+#height: '100%'
 revealOptions:
   transition: 'fade'
+  center: false
 ---
 
-# Build yourself an effect system
+## Build yourself an effect system
 
 ---
 
@@ -225,7 +229,7 @@ def unsafeRun[E, A](io: => IO[E, A]): Exit[E, A]
 
 ---
 
-# build interpreter running effects in fibers
+## interpreter running effects in fibers
 
  * stack safety
  * error model
@@ -233,17 +237,23 @@ def unsafeRun[E, A](io: => IO[E, A]): Exit[E, A]
  * interruption
  * fair scheduling
 
- Show API of Runtime
- 
- ---
+---
  
  ### Take representation of effects from ZIO
 
  ```scala
- UIO[A] // Produces an A, cannot fail
- IO[E, A] // Produces an A or fails with an E.
- ```
+// Moral equivalent of Reader[R, Either[E, A]]
+// or rather Kleisli[F[_], R, Either[E, A]]
+trait ZIO[R, E, A]
 
+// Produce an A or fails with E.
+// Moral equivalent of F[Either[E, A]]
+type  IO[E, A] = ZIO[Any, E, A] 
+
+// Produce an A, never fail
+// Moral equivalent of F[A]
+type  UIO[A] = IO[Nothing, A] 
+ ```
 
 ---
 
@@ -289,7 +299,6 @@ FiberRefModify
 Natural numbers in Peano encoding
 
 ```scala
-
 sealed trait N
 case object Zero extends N
 case class Cons(n: N) extends N
@@ -393,13 +402,217 @@ def addAll(ns: N*): UIO[N] =
       for {
         lsf <- addAll(l: _*).fork
         rsf <- addAll(r: _*).fork
+        _ <- ZIO.yieldNow
         ls <- lsf.join
         rs <- rsf.join
         s <- AddMul.add(ls, rs)
-        _ <- ZIO.yieldNow
       } yield s
   }
 ```
+
+---
+
+## Interpreting IOs
+
+```scala
+type Stack = List[Any => IO[Any, Any]]
+
+type Interpreter =
+  PartialFunction[      // may interpret just part of the ADT
+    (
+        IO[Any, Any],   // the next IO to interpret
+        Any,            // the current input parameter
+        Stack,          // the remainder of the stack
+        Fiber[Any, Any] // the current fiber
+    ),
+    Either[
+      Option[Exit[Any, Any]], // suspend or exit
+      (Any, Stack)            // continue with new state
+    ]
+  ]
+```
+
+---
+
+## fallback interpreter 
+
+```scala
+val notImplemented: Interpreter = {
+  case (io, v, stack, fiber) =>
+    val e = 
+      new IllegalStateException(
+        s"not implemented: ${io.getClass}"
+      )
+    Left(Some(Exit.die(e)))
+}
+```
+
+---
+
+### smallest useful interpreter: 
+
+A Trampoline
+
+```scala
+class Succeed[A](val value: A) extends UIO[A]
+class FlatMap[R, E, A0, A](
+    val zio: ZIO[R, E, A0], 
+    val k: A0 => ZIO[R, E, A]
+  ) extends ZIO[R, E, A] 
+
+
+val succeedFlatMap: Interpreter = {
+  case (s: Succeed[_], _, stack, _) => 
+    Right((s.value, stack))
+  case (fm: FlatMap[_, _, _, _], v, stack, _) =>
+    val newStack: Stack = stack
+      .prepended(fm.k.asInstanceOf[Any => IO[Any, Any]])
+      .prepended(_ => fm.zio)
+    Right((v, newStack))
+}
+```
+
+---
+
+### minimal fiber
+
+```scala
+class Fiber[E, A](interpreter: Interpreter) {
+
+  def run(io: IO[E, A]): Exit[E, A] = step((), List(() => io))
+
+  @tailrec
+  private def step(v: Any, stack: Fiber.Stack): Exit[E, A] = {
+    val next =
+      for {
+        f <- stack.headOption.toRight(Some(Exit.succeed(v)))
+        io <- Try(f(v)).toEither.left.map(e => Some(Exit.die(e)))
+        next <- interpreter.applyOrElse(
+          (io, v, stack.tail, this),
+          Fiber.notImplemented
+        )
+      } yield next
+    next match {
+      case Left(None) => Exit.die(new IllegalStateException())
+      case Left(Some(exit)) => exit
+      case Right((v, stack)) => step(v, stack)
+    }
+  }
+}
+```
+
+---
+
+## Fiber & Runtime
+
+notes: Code walkthrough
+
+---
+
+## AddDemo
+
+`bloop run runtime -m com.github.runtologist.demo.DemoAdd`
+
+---
+
+## DivDemo
+
+`bloop run runtime -m com.github.runtologist.demo.DemoAdd`
+
+---
+
+## fail
+
+On error, fail right away, no recovery for now.
+
+```scala
+val fail: Interpreter = {
+  case (f: Fail[_, _], _, _, _) =>
+    // tracing not implemented
+    val e = f.fill(() => ZTrace(fiberId = 0L, Nil, Nil, None))
+    val exit =
+      e.failureOption.map(Exit.fail).orElse(e.dieOption.map(Exit.die)).get
+    Left(Some(exit))
+}
+```
+
+---
+
+## fork and await
+
+```scala
+val forkEffectAsync: Interpreter = {
+  case (ea: EffectAsync[_, _, _], _, stack, fiber) =>
+    def callback(vv: ZIO[Any, Any, Any]): Unit =
+      fiber.schedule((), stack.prepended(_ => vv))
+
+    ea.register(callback) match {
+      case None     => Left(None)
+      case Some(io) => Right(((), stack.prepended(_ => io)))
+    }
+  case (f: Fork[_, _, _], v, stack, parent) =>
+    val fiber = new Fiber(parent.interpreter, parent.ec)
+    fiber.schedule(v, List(_ => f.value))
+    Right((fiber, stack))
+}
+```
+
+also: Fiber.await
+
+---
+
+### So far first come first serve
+
+First step: Cooperative yielding
+
+```scala
+val doYield: Interpreter = {
+  case (Yield, _, stack, fiber) =>
+    fiber.schedule((), stack)
+    Left(None)
+}
+```
+
+
+---
+
+## CoopDemo
+
+`bloop run runtime -m com.github.runtologist.demo.DemoAllAddCoop`
+
+---
+
+## RR scheduling
+
+```scala
+class FairInterpreter(underlying: Interpreter) 
+    extends Interpreter {
+  val yieldAfter = 10
+  var count = yieldAfter
+
+  override def apply(param: InterpreterParams): Interpretation = {
+    underlying.apply(param) match {
+      case l @ Left(_) => l
+      case Right((v, stack)) if count < 1 =>
+        count = yieldAfter
+        param._4.schedule(v, stack)
+        Left(None)
+      case r @ Right(_) =>
+        count -= 1
+        r
+    }
+  }
+
+  // implement PartialFunction 
+  override def isDefinedAt ...
+}
+```
+
+---
+
+## FullDemo
+
+`bloop run runtime -m com.github.runtologist.demo.DemoAllAdd`
 
 ---
 
