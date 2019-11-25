@@ -1,5 +1,7 @@
 package com.github.runtologist.runtime
 
+import com.github.runtologist.runtime.Fiber._
+
 import zio.Exit
 import zio.{Fiber => ZioFiber}
 import zio.IO
@@ -9,6 +11,8 @@ import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 import scala.util.Try
 import scala.util.Random
+import scala.util.Success
+import scala.util.Failure
 
 object Fiber {
 
@@ -21,16 +25,11 @@ object Fiber {
         Stack, // the remainder of the stack
         Fiber[Any, Any] // the current fiber
     )
-  type Interpretation =
-    Either[
-      Option[Exit[Any, Any]], // suspend execution (None) or terminate with an Exit
-      (Any, Stack) // or continue with new state and stack
-    ]
 
-  // sealed trait Int2
-  // case class Exit_(x: Exit[Any, Any]) extends Int2
-  // case class Step(v: Any, stack: Stack) extends Int2
-  // case object Suspend extends Int2
+  sealed trait Interpretation
+  case object Suspend extends Interpretation
+  case class Return(exit: Exit[Any, Any]) extends Interpretation
+  case class Step(v: Any, stack: Stack) extends Interpretation
 
   type Interpreter =
     PartialFunction[ // may interpret just part of the ADT
@@ -41,7 +40,7 @@ object Fiber {
   val notImplemented: Interpreter = {
     case (other, _, _, _) =>
       val e = new IllegalStateException(s"not implemented: ${other.getClass}")
-      Left(Some(Exit.die(e)))
+      Return(Exit.die(e))
   }
 
 }
@@ -70,31 +69,38 @@ class Fiber[E, A](
     val indent = fansi.Color.all(id % 16)(s"$id: " + ".".*(stack.length))
     println(s"$indent step $v")
     val next =
-      for {
-        _ <- Either.cond(!interrupted, (), Some(Exit.interrupt))
-        f <- stack.headOption.toRight(Some(Exit.succeed(v.asInstanceOf[A])))
-        io <- Try(f(v)).toEither.left.map(e => Some(Exit.die(e)))
-        _ = println(
-          s"$indent interpreting " + fansi.Color.all(io.tag + 5)(
-            io.getClass().getSimpleName()
-          )
-        )
-        next <- interpreter.applyOrElse(
-          (io, v, stack.tail, this.asInstanceOf[Fiber[Any, Any]]),
-          Fiber.notImplemented
-        )
-      } yield next
+      if (interrupted) {
+        Return(Exit.interrupt)
+      } else {
+        stack match {
+          case Nil => Return(Exit.succeed(v.asInstanceOf[A]))
+          case f :: tail =>
+            Try(f(v)) match {
+              case Failure(e) => Return(Exit.die(e))
+              case Success(io) =>
+                println(
+                  s"$indent interpreting " + fansi.Color.all(io.tag + 5)(
+                    io.getClass().getSimpleName()
+                  )
+                )
+                interpreter.applyOrElse(
+                  (io, v, tail, this.asInstanceOf[Fiber[Any, Any]]),
+                  Fiber.notImplemented
+                )
+            }
+        }
+      }
     next match {
-      case Left(None) =>
+      case Suspend =>
         println(s"$indent suspending")
-      case Left(Some(exit)) =>
+      case Return(exit) =>
         println(s"$indent done: $exit")
         val typedExit = exit.asInstanceOf[Exit[E, A]]
         result.synchronized {
           result = Some(typedExit)
           listeners.foreach(_(typedExit))
         }
-      case Right((v, stack)) =>
+      case Step(v, stack) =>
         step(v, stack)
     }
   }
