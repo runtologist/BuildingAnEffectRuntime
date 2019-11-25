@@ -17,7 +17,10 @@ object DivFold extends scala.App {
         else
           SubDiv
             .sub(nn, m)
-            .foldM(_ => UIO.succeed(accu), rest => step(Cons(accu), rest))
+            .foldM(
+              _ => UIO.succeed(accu),
+              rest => step(Cons(accu), rest)
+            )
       }
       step(Zero, n)
     }

@@ -6,8 +6,8 @@
 .reveal pre code ::selection {
   background-color: blanchedalmond;
 }
-::selection {
-    background-color: blanchedalmond;
+.hljs ::selection {
+  background-color: blanchedalmond;
 }
 
 /* .reveal .slides > section.present, .reveal .slides > section > section.present {

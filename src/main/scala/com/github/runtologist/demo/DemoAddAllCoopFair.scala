@@ -20,7 +20,6 @@ object DemoAddAllFair extends scala.App {
     )
 
   val runtime = new Runtime(interpreter)
-
   val r =
     runtime.unsafeRun(
       AddAllCoop

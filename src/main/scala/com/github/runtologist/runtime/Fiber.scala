@@ -11,8 +11,6 @@ import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 import scala.util.Try
 import scala.util.Random
-import scala.util.Success
-import scala.util.Failure
 
 object Fiber {
 
@@ -68,16 +66,16 @@ class Fiber[E, A](
   private def step(v: Any, stack: Fiber.Stack): Unit = {
     val indent = fansi.Color.all(id % 16)(s"$id: " + ".".*(stack.length))
     println(s"$indent step $v")
-    val next =
+    val safeInterpretation: Interpretation =
       if (interrupted) {
         Return(Exit.interrupt)
       } else {
         stack match {
           case Nil => Return(Exit.succeed(v.asInstanceOf[A]))
           case f :: tail =>
-            Try(f(v)) match {
-              case Failure(e) => Return(Exit.die(e))
-              case Success(io) =>
+            Try(f(v)).fold(
+              e => Return(Exit.die(e)),
+              io => {
                 println(
                   s"$indent interpreting " + fansi.Color.all(io.tag + 5)(
                     io.getClass().getSimpleName()
@@ -87,10 +85,11 @@ class Fiber[E, A](
                   (io, v, tail, this.asInstanceOf[Fiber[Any, Any]]),
                   Fiber.notImplemented
                 )
-            }
+              }
+            )
         }
       }
-    next match {
+    safeInterpretation match {
       case Suspend =>
         println(s"$indent suspending")
       case Return(exit) =>

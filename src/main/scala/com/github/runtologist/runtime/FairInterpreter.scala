@@ -1,8 +1,6 @@
 package com.github.runtologist.runtime
 
-import com.github.runtologist.runtime.Fiber.Interpreter
-import com.github.runtologist.runtime.Fiber.Stack
-import zio.Exit
+import com.github.runtologist.runtime.Fiber._
 import zio.IO
 
 object FairInterpreter {
@@ -13,21 +11,19 @@ object FairInterpreter {
 
       override def apply(
           param: (IO[Any, Any], Any, Stack, Fiber[Any, Any])
-      ): Either[
-        Option[Exit[Any, Any]], // suspend execution or optionally terminate with an Exit
-        (Any, Stack) // or continue with new state and stack
-      ] = {
+      ): Interpretation = {
         underlying.apply(param) match {
-          case l @ Left(_) => l
-          case Right((v, stack)) if count < 1 =>
+          case Suspend       => Suspend
+          case r @ Return(_) => r
+          case Step(v, stack) if count < 1 =>
             val fiber = param._4
             println(s"Suspending Fiber ${fiber.id} to be fair.")
             count = yieldAfter
             fiber.schedule(v, stack)
-            Left(None)
-          case r @ Right(_) =>
+            Suspend
+          case s @ Step(_, _) =>
             count -= 1
-            r
+            s
         }
       }
 

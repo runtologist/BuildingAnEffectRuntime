@@ -23,7 +23,7 @@ object DemoDivFold extends scala.App {
           Zero
         )
         .flatMap(r => UIO.succeed(r.toString))
-        .catchAll(_ => UIO.succeed("Oh noes!"))
+        .catchAll(_ => UIO.succeed(Oh no, division by Zero!"))
     )
   println(r)
 
