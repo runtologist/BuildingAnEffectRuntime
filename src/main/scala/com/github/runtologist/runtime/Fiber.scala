@@ -4,7 +4,6 @@ import zio.Exit
 import zio.{Fiber => ZioFiber}
 import zio.IO
 import zio.UIO
-import zio.ZIO
 
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
@@ -27,6 +26,12 @@ object Fiber {
       Option[Exit[Any, Any]], // suspend execution (None) or terminate with an Exit
       (Any, Stack) // or continue with new state and stack
     ]
+
+  // sealed trait Int2
+  // case class Exit_(x: Exit[Any, Any]) extends Int2
+  // case class Step(v: Any, stack: Stack) extends Int2
+  // case object Suspend extends Int2
+
   type Interpreter =
     PartialFunction[ // may interpret just part of the ADT
       InterpreterParams,
@@ -62,13 +67,18 @@ class Fiber[E, A](
 
   @tailrec
   private def step(v: Any, stack: Fiber.Stack): Unit = {
-    println(s"$id: step v=$v stackSize=${stack.size}")
+    val indent = fansi.Color.all(id % 16)(s"$id: " + ".".*(stack.length))
+    println(s"$indent step $v")
     val next =
       for {
         _ <- Either.cond(!interrupted, (), Some(Exit.interrupt))
         f <- stack.headOption.toRight(Some(Exit.succeed(v.asInstanceOf[A])))
         io <- Try(f(v)).toEither.left.map(e => Some(Exit.die(e)))
-        _ = println(s"$id: interpreting ${io.getClass().getSimpleName()}")
+        _ = println(
+          s"$indent interpreting " + fansi.Color.all(io.tag + 5)(
+            io.getClass().getSimpleName()
+          )
+        )
         next <- interpreter.applyOrElse(
           (io, v, stack.tail, this.asInstanceOf[Fiber[Any, Any]]),
           Fiber.notImplemented
@@ -76,9 +86,9 @@ class Fiber[E, A](
       } yield next
     next match {
       case Left(None) =>
-        println(s"$id: suspending")
+        println(s"$indent suspending")
       case Left(Some(exit)) =>
-        println(s"$id: done: $exit")
+        println(s"$indent done: $exit")
         val typedExit = exit.asInstanceOf[Exit[E, A]]
         result.synchronized {
           result = Some(typedExit)
@@ -95,12 +105,12 @@ class Fiber[E, A](
   // implement Fiber trait
 
   override def await: UIO[Exit[E, A]] =
-    ZIO.effectAsyncMaybe[Any, Nothing, Exit[E, A]] { k =>
+    UIO.effectAsyncMaybe { k =>
       result.synchronized {
         result.fold[Option[UIO[Exit[E, A]]]] {
           register(exit => k(UIO.succeed(exit)))
           None
-        }(r => Some(ZIO.succeed(r)))
+        }(r => Some(UIO.succeed(r)))
       }
     }
 

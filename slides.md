@@ -16,18 +16,22 @@ revealOptions:
 
 ### Simon Schenk
 
-<img  src="img/simon--rotated--small.jpg" style="float:right;transform:rotate(45deg);max-width:20%">
+
+
+<!-- <img  src="img/simon--rotated--small.jpg" style="float:right;transform:rotate(45deg);max-width:20%"> -->
+<img  src="img/icon__filled--light@3x.png" style="max-width:20%"> 
 
 CTO at Risk42 (https://risk42.com)
 
-simon@risk42.com - @runtologist
+ ----
 
- * Query Engine in Java 6 
- * Scala 2.7 as better Java 
- * Akka Cluster 
- * Akka Streams 
- * `Kleisli[IO[_], R, Either[E, A]]` 
- * `ZIO[R, E, A]`
+###### https://github.com/zio/interop-reactive-streams
+
+###### https://github.com/zio/telemetry
+
+ ----
+
+simon@risk42.com - @runtologist
 
 ---
 
@@ -229,6 +233,7 @@ def unsafeRun[E, A](io: => IO[E, A]): Exit[E, A]
  * parallelism fork/join
  * interruption
  * fair scheduling
+ * error recovery
 
 ---
  
@@ -297,7 +302,7 @@ FiberRefModify
 
 ### Example Domain
 
-Natural numbers in Peano encoding
+Natural Numbers in Peano encoding
 
 ```scala
 sealed trait N
@@ -471,7 +476,7 @@ val succeedFlatMap: Interpreter = {
   case (s: Succeed, _, stack, _) => Right((s.value, stack))
   case (fm: FlatMap, v, stack, _) =>
     val newStack: Stack = stack
-      .prepended(fm.k.asInstanceOf[Any => IO[Any, Any]])
+      .prepended(fm.k)
       .prepended(_ => fm.zio)
     Right((v, newStack))
 }
@@ -488,9 +493,9 @@ class Fiber[E, A](interpreter: Interpreter) {
 
   @tailrec
   private def step(v: Any, stack: Fiber.Stack): Exit[E, A] = {
-    val next =
+    val next: Either[Exit[E, A], Any] =
       for {
-        f <- stack.headOption.toRight(Some(Exit.succeed(v)))
+        f <- stack.headOption.toRight(left = Some(Exit.succeed(v)))
         io <- Try(f(v)).toEither.left.map(e => Some(Exit.die(e)))
         next <- interpreter.applyOrElse(
           (io, v, stack.tail, this),
@@ -577,16 +582,15 @@ case (f: Fail[_, _], _, _, fiber) =>
 ### fork and await
 
 ```scala
-class Fork[R, E, A](val value: ZIO[R, E, A]) 
-    extends ZIO[R, Nothing, Fiber[E, A]]
-class EffectAsync[R, E, A](
-    val register: (ZIO[R, E, A] => Unit) => Option[ZIO[R, E, A]]
-) extends ZIO[R, E, A]
+class Fork[E, A](val value: IO[E, A]) extends UIO[Fiber[E, A]]
+class EffectAsync[E, A](
+    val register: (IO[E, A] => Unit) => Option[IO[E, A]]
+) extends IO[E, A]
 ```
 
 ```scala
 case (ea: EffectAsync, _, stack, fiber) =>
-  def callback(vv: ZIO[_, _, _]): Unit =
+  def callback(vv: IO[_, _]): Unit =
     fiber.schedule((), stack.prepended(_ => vv))
 
   ea.register(callback) match {
@@ -656,10 +660,6 @@ class FairInterpreter(underlying: Interpreter)
 ### FullDemo
 
 `bloop run runtime -m com.github.runtologist.demo.DemoAllAdd`
-
----
-
-### interruption
 
 ---
 

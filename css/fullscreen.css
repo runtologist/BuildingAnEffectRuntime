@@ -1,8 +1,15 @@
 .reveal pre code {
-    max-height: 100%;
-    max-width: 100%;
-    overflow: visible;
+  max-height: 100%;
+  max-width: 100%;
+  overflow: visible;
 }
+.reveal pre code ::selection {
+  background-color: blanchedalmond;
+}
+::selection {
+    background-color: blanchedalmond;
+}
+
 /* .reveal .slides > section.present, .reveal .slides > section > section.present {
   min-height: 100% !important;
   display: flex !important;

@@ -10,7 +10,7 @@ import scala.concurrent.ExecutionContext.global
 object DemoAddAll extends scala.App {
   implicit val ec = global
 
-  val interpreter = succeedFlatMap orElse fail // orElse forkEffectAsync
+  val interpreter = succeedFlatMap orElse fail orElse forkEffectAsync
 
   val runtime = new Runtime(interpreter)
 

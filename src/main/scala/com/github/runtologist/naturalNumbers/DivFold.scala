@@ -6,7 +6,7 @@ import com.github.runtologist.naturalNumbers.N._
 import zio.IO
 import zio.UIO
 
-object DivFold {
+object DivFold extends scala.App {
 
   def div(n: N, m: N): IO[Div0.type, N] =
     if (m == Zero) IO.fail(Div0)

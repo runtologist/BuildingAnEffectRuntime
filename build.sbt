@@ -6,7 +6,8 @@ lazy val `runtime` =
   (project in file("."))
     .settings(
       libraryDependencies := Seq(
-        "dev.zio" %% "zio" % "1.0.0-RC16"
+        "dev.zio" %% "zio" % "1.0.0-RC16",
+        "com.lihaoyi" %% "fansi" % "0.2.7"
       ),
       scalacOptions ++= Seq(
         "-deprecation",
