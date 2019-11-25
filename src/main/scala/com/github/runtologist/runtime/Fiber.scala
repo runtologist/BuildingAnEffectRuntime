@@ -68,6 +68,7 @@ class Fiber[E, A](
         _ <- Either.cond(!interrupted, (), Some(Exit.interrupt))
         f <- stack.headOption.toRight(Some(Exit.succeed(v.asInstanceOf[A])))
         io <- Try(f(v)).toEither.left.map(e => Some(Exit.die(e)))
+        _ = println(s"$id: interpreting ${io.getClass().getSimpleName()}")
         next <- interpreter.applyOrElse(
           (io, v, stack.tail, this.asInstanceOf[Fiber[Any, Any]]),
           Fiber.notImplemented

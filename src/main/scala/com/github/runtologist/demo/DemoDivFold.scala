@@ -6,11 +6,12 @@ import com.github.runtologist.runtime.Runtime
 import zio.ZioInterpreters._
 
 import scala.concurrent.ExecutionContext.global
+import zio.UIO
 
-object DemoDiv extends scala.App {
+object DemoDivFold extends scala.App {
   implicit val ec = global
 
-  val interpreter = succeedFlatMap // orElse fail
+  val interpreter = succeedFlatMap orElse failFold
 
   val runtime = new Runtime(interpreter)
 
@@ -21,6 +22,8 @@ object DemoDiv extends scala.App {
           Cons(Cons(Zero)),
           Zero
         )
+        .flatMap(r => UIO.succeed(r.toString))
+        .catchAll(_ => UIO.succeed("Oh noes!"))
     )
   println(r)
 
