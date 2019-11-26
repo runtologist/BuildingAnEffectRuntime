@@ -1,4 +1,4 @@
-Slides and code for a talk about building an effect runtime compatible with [ZIO](https://zio.dev)
+Slides and code for a [talk at ScalaHamburg](https://www.meetup.com/de-DE/Scala-Hamburg/events/265681417/) about building an effect runtime compatible with [ZIO](https://zio.dev)
 
 # Play Slides
 
