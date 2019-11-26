@@ -34,21 +34,6 @@ simon@risk42.com - @runtologist
 
 ---
 
-### Why functional effects?
-
-* easily correct
-* fast
-* simple
-
-  e.g. retry 10 times with exponential backoff: 
-  `effect.retry(Schedule.exponential(2.seconds) && Schedule.recurs(10))`
-
-* effects are values
-
-  e.g. infer effects to run for a loan application
-
----
-
 ### Why ZIO?
 
 "Read an `R` from the environment and run an effect returning a result of `A` or an Error of `E`."
