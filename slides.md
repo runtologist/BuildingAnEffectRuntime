@@ -943,6 +943,8 @@ case (fail: ZIO.Fail[_, _], _, stack, fiber) =>
 
 # THX
 
+###### https://github.com/runtologist/BuildingAnEffectRuntime
+
 <img  src="img/icon__filled--light@3x.png" style="max-width:20%"> 
 
 ### We are hiring
