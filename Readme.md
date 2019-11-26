@@ -4,6 +4,7 @@ Slides and code for a [talk at ScalaHamburg](https://www.meetup.com/de-DE/Scala-
 
 ```
 npm install -g reveal-md
+reveal-md slides.md -w --css css/fullscreen.css
 ```
 
 # Run Examples
