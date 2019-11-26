@@ -1,0 +1,22 @@
+Slides and code for a talk about building an effect runtime compatible with [ZIO](https://zio.dev)
+
+# Play Slides
+
+```
+npm install -g reveal-md
+```
+
+# Run Examples
+
+```
+brew install bloop
+brew service start bloop
+sbt bloopInstall
+
+bloop run runtime -m  com.github.runtologist.demo.DemoAdd
+bloop run runtime -m  com.github.runtologist.demo.DemoDiv
+bloop run runtime -m  com.github.runtologist.demo.DemoAddAll
+bloop run runtime -m  com.github.runtologist.demo.DemoAddAllCoop
+bloop run runtime -m  com.github.runtologist.demo.DemoAddAllFair
+bloop run runtime -m  com.github.runtologist.demo.DemoDivFold
+```
