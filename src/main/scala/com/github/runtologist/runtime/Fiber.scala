@@ -10,7 +10,6 @@ import zio.UIO
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 import scala.util.Try
-import scala.util.Random
 
 object Fiber {
 
@@ -41,6 +40,13 @@ object Fiber {
       Return(Exit.die(e))
   }
 
+  private[this] var nextId_ = 0
+  def nextId(): Int = {
+    val next = nextId_
+    nextId_ += 1
+    next
+  }
+
 }
 
 class Fiber[E, A](
@@ -48,7 +54,7 @@ class Fiber[E, A](
     val ec: ExecutionContext
 ) extends ZioFiber[E, A] {
 
-  val id: Int = Random.nextInt(Int.MaxValue)
+  val id: Int = nextId()
 
   @volatile private var result: Option[Exit[E, A]] = None
   @volatile private var interrupted: Boolean = false
@@ -64,7 +70,7 @@ class Fiber[E, A](
 
   @tailrec
   private def step(v: Any, stack: Fiber.Stack): Unit = {
-    val indent = fansi.Color.all(id % 16)(s"$id: " + ".".*(stack.length))
+    val indent = fansi.Color.all(id + 3 % 16)(s"$id: " + ".".*(stack.length))
     println(s"$indent step $v")
     val safeInterpretation: Interpretation =
       if (interrupted) {

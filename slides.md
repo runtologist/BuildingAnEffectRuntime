@@ -18,7 +18,6 @@ revealOptions:
 
 ### Simon Schenk
 
-<!-- <img  src="img/simon--rotated--small.jpg" style="float:right;transform:rotate(45deg);max-width:20%"> -->
 <img  src="img/icon__filled--light@3x.png" style="max-width:20%"> 
 
 CTO at Risk42 (https://risk42.com)
@@ -35,26 +34,18 @@ simon@risk42.com - @runtologist
 
 ---
 
-<img  src="img/icon__filled--light@3x.png" style="max-width:20%"> 
-
-* Realtime Risk Assessment for Consumer Lending using Machine Learning
-* Green Field Project using ZIO
-* (and K8s, Openapi, Python, MongoDB...)
-
----
-
 ### Why functional effects?
 
 * easily correct
 * fast
 * simple
 
-  e.g. retry 10 times with exponential backoff: `effect.retry(Schedule.exponential(2.seconds) && Schedule.recurs(10))`
+  e.g. retry 10 times with exponential backoff: 
+  `effect.retry(Schedule.exponential(2.seconds) && Schedule.recurs(10))`
 
 * effects are values
 
-  We can e.g. infer effects to run for a loan application
-
+  e.g. infer effects to run for a loan application
 
 ---
 
@@ -73,6 +64,32 @@ Kleisli[F[_], R, Either[E, A]]
 ```scala
 ZIO[R, E, A]
 ```
+
+---
+
+### Why this talk?
+
+* 1kloc Runtime
+* complex but not complicated
+* Strip away non essentials
+* prefer readability over performance
+* On the slides: simplified types, might not compile
+
+---
+
+### Agenda
+
+* Functional Effects, Errors vs. Defects
+* Running Effects
+* Example Domain: Natural Numbers 
+* Build Fiber runtime driving Interpreters
+* Implement Interpreters
+  * syncronous happy path
+  ---
+  * error channel
+  * asynchronicity
+  * cooperative and fair scheduling
+  * error recovery
 
 ---
 
@@ -108,8 +125,8 @@ val future: Future[Unit] =
 // still does nothing
 val readName: IO[IOError, String] = 
   for {
-    _ <- _IO(println("What's your name?"))
-    name <- IO(console.readLine)
+    _    <- IO(println("What's your name?"))
+    name <- Task(console.readLine)
               .refineOrDie { case e: IOError => e }
   } yield name
 
@@ -148,6 +165,48 @@ Hello, FooBar!
 
 ---
 
+### Running Effects
+
+* Execute in a *Fiber*
+* Asynchronously
+* Can fork more Fibers
+
+```scala
+val effect =
+  for {
+    _      <- console.putStrLn("What's your name?")
+    fiber  <- expensiveBackgroundWork.fork
+    name   <- console.readStrLn
+    _      <- console.putStrLn(s"Hello, $name!")
+    result <- fiber.join
+  } yield result
+
+runtime.unsafeRun(effect)
+```
+
+---
+
+### Fiber = Lightweight thread implemented in Library
+
+* Like thread:
+  * Will run in parallel. 
+  * fork, join/await, interrupt
+* Unlike Thread:
+  * No mapping to OS level threads, works on ScalaJS
+  * Cheap. Run 10s of 1000s concurrently.
+  * Fine grained control, extensible
+
+---
+
+### Concurrency != Parallelism
+
+> Concurrency is the composition of independently executing processes, while parallelism is the simultaneous execution of (possibly related) computations.
+
+###### https://howtodoinjava.com/java/multi-threading/concurrency-vs-parallelism/
+
+
+---
+
 ### Errors
 
 Expected Failure Modes
@@ -158,9 +217,11 @@ case object TooShort extends NameError
 
 val readName: IO[NameError, String] = 
   for {
-    _ <- IO(println("What's your name?"))
-    name <- IO(console.readLine).eventually
-    _ <- IO.fail(TooShort).when(name.length < 3)
+    _    <- IO(println("What's your name?"))
+    name <- Task(console.readLine)
+              .refineOrDie { case e: IOError => e }
+              .catchAll(_ => "")
+    _    <- IO.fail(TooShort).when(name.length < 3)
   } yield name
 
 val r: Exit[NameError, String] = 
@@ -172,72 +233,6 @@ val r: Exit[NameError, String] =
 ### vs Defects
 
 <img src="img/bad-bug.svg" style="width:50%"/>
-
----
-
-### Running Effects
-
-* Execute in a *Fiber*
-* Asynchronously
-* Can fork more Fibers
-
-```scala
-val effect =
-  for {
-    _ <- console.putStrLn("What's your name?")
-    fiber <- expensiveBackgroundWork.fork
-    name <- console.readStrLn
-    _ <- console.putStrLn(s"Hello, $name!")
-    result <- fiber.join
-  } yield result
-runtime.unsafeRun(effect)
-```
-
----
-
-### Fiber
-
-* Like thread:
-  * Will run in parallel. 
-  * (if multiple threads. Single threaded on ScalaJS.)
-* Unlike Thread:
-  * No mapping to OS level threads
-  * No expensive context switched
-  * Fine grained control
-
----
-
-### Fiber
-
-E.g. Erlang has Green Threads in Runtime
-
-Java doesn't.
-
-#### Fiber = Green thread implemented in Library
-
----
-
-### Concurrency != Parallelism
-
-> Concurrency is the composition of independently executing processes, while parallelism is the simultaneous execution of (possibly related) computations.
-> Concurrency is about dealing with lots of things at once. Parallelism is about doing lots of things at once."
-
-###### https://howtodoinjava.com/java/multi-threading/concurrency-vs-parallelism/
-
----
-
-### Exit
-
-```scala
-sealed trait Exit[+E, +A]
-case class Success[A](v: A)           extends Exit[Nothing, A]
-case class Failure[E](c: zio.Cause[E])extends Exit[E, Nothing]
-
-sealed trait Cause[+E]
-case class  Fail[E](value: E)     extends Cause[E]
-case class  Die(value: Throwable) extends Cause[Nothing]
-case object Interrupt             extends Cause[Nothing] 
-```
 
 ---
 
@@ -257,6 +252,21 @@ def race[E, A](io1: IO[E, A], io2: IO[E, A]): IO[E, A] =
 
 ---
 
+### Exit
+
+```scala
+sealed trait Exit[+E, +A]
+case class Success[A](v: A)           extends Exit[Nothing, A]
+case class Failure[E](c: zio.Cause[E])extends Exit[E, Nothing]
+
+sealed trait Cause[+E]
+case class  Fail[E](value: E)     extends Cause[E]
+case class  Die(value: Throwable) extends Cause[Nothing]
+case object Interrupt             extends Cause[Nothing] 
+```
+
+---
+
 ### What we want to build
 
 ```scala
@@ -271,83 +281,9 @@ def unsafeRun[E, A](io: => IO[E, A]): Exit[E, A]
 
 ---
 
-### Interpreter Running Effects in Fibers
-
- * stack safety
- * error model
- * parallelism fork/join
- * interruption
- * fair scheduling
- * error recovery
-
----
- 
- ### Take Representation of Effects from ZIO
-
- ```scala
-// Moral equivalent of Kleisli[F[_], R, Either[E, A]]
-trait ZIO[R, E, A]
-
-// Produce an A or fails with E.
-// Moral equivalent of F[Either[E, A]]
-type  IO[E, A] = ZIO[Any, E, A] 
-
-// Produce an A, never fail
-// Moral equivalent of F[A]
-type  UIO[A] = IO[Nothing, A] 
- ```
-
----
-
-### Effect ADT
-
-
-```scala
-trait IO[E, A] {
-
-  def flatMap[E1 >: E, B](
-      k: A => IO[E1, B]
-  ): IO[E1, B] =
-    new ZIO.FlatMap(self, k)
-
-  def succeed[A](a: A): UIO[A] = new ZIO.Succeed(a)
-
-  def fork: IO[R, Nothing, Fiber[E, A]] = new ZIO.Fork(self)
-
-}
-```
-
----
-
-### Effect ADT
-
-```scala
-FlatMap           Succeed            EffectTotal              
-Fail              Fold               InterruptStatus          
-CheckInterrupt    EffectPartial      EffectAsync              
-Fork              SuperviseStatus    EffectSuspendPartialWith 
-Descriptor        FiberRefNew        Lock                     
-FiberRefModify           
-````
-
----
-
-### Effect ADT
-
-```scala
-* FlatMap         * Succeed          EffectTotal              
-* Fail            * Fold             InterruptStatus          
-CheckInterrupt    EffectPartial      * EffectAsync              
-* Fork            SuperviseStatus    EffectSuspendPartialWith 
-Descriptor        FiberRefNew        Lock                     
-FiberRefModify           
-````
-
----
-
 ### Example Domain
 
-Natural Numbers in from Peano Axioms
+Natural Numbers from Peano Axioms
 
 ```scala
 sealed trait N
@@ -386,6 +322,10 @@ def mul(n: N, m: N): N =
 ---
 
 ### Stack Safe Encoding
+
+```scala
+type  UIO[A] = IO[Nothing, A] 
+```
 
 ```scala
 def add(n: N, m: N): UIO[N] =
@@ -455,9 +395,9 @@ def addAll(ns: N*): UIO[N] =
       for {
         lsf <- addAll(l: _*).fork
         rsf <- addAll(r: _*).fork
-        _ <- UIO.yieldNow
         ls <- lsf.join
         rs <- rsf.join
+        _ <- UIO.yieldNow
         s <- add(ls, rs)
       } yield s
   }
@@ -467,8 +407,138 @@ def addAll(ns: N*): UIO[N] =
 
 # Let's go!
 
-* ADT & combinatotors from ZIO
+* ADT & combinators from ZIO
 * Build our own Runtime and Fiber
+
+---
+
+ ### Take Representation of Effects from ZIO
+
+ ```scala
+// Moral equivalent of Kleisli[F[_], R, Either[E, A]]
+trait ZIO[R, E, A]
+
+// Produce an A or fails with E.
+// Moral equivalent of F[Either[E, A]]
+type  IO[E, A] = ZIO[Any, E, A] 
+
+// Produce an A, never fail
+// Moral equivalent of F[A]
+type  UIO[A] = IO[Nothing, A] 
+ ```
+
+---
+
+### Effect ADT
+
+
+```scala
+trait IO[E, A] {
+
+  def flatMap[E1 >: E, B](k: A => IO[E1, B]): IO[E1, B] =
+    new ZIO.FlatMap(self, k)
+
+  def succeed[A](a: A): UIO[A] = new ZIO.Succeed(a)
+
+  def fork: IO[R, Nothing, Fiber[E, A]] = new ZIO.Fork(self)
+
+  ...
+
+}
+```
+
+---
+
+### Effect ADT
+
+```scala
+FlatMap          Succeed          Fail                   
+Fold             EffectAsync      Fork          
+Yield            EffectTotal      InterruptStatus        
+CheckInterrupt   EffectPartial    DaemonStatus           
+CheckDaemon      Descriptor       Lock                   
+Access           Provide          EffectSuspendPartialWith 
+FiberRefNew      FiberRefModify   Trace                  
+TracingStatus    CheckTracing     EffectSuspendTotalWith 
+RaceWith               
+```
+
+---
+
+### Effect ADT
+
+```scala
+* FlatMap        * Succeed        * Fail                   
+* Fold           * EffectAsync    * Fork          
+* Yield          EffectTotal      InterruptStatus        
+CheckInterrupt   EffectPartial    DaemonStatus           
+CheckDaemon      Descriptor       Lock                   
+Access           Provide          EffectSuspendPartialWith 
+FiberRefNew      FiberRefModify   Trace                  
+TracingStatus    CheckTracing     EffectSuspendTotalWith 
+RaceWith               
+```
+
+---
+
+### Approach
+
+```scala
+type Stack = List[Any => IO[Any, Any]]
+
+@tailrec
+private def step(v: Any, stack: Fiber.Stack): Exit
+```
+
+-----
+
+```scala
+class Succeed[A](val value: A) extends UIO[A]
+class FlatMap[E, A](
+    val io:      IO[E, A], 
+    val k:  A => IO[E, A]
+  ) extends IO[E, A] 
+```
+
+---
+
+<section data-background="img/StackIllustration/StackIllustration.001.jpeg">
+
+---
+
+<section data-background="img/StackIllustration/StackIllustration.002.jpeg">
+
+---
+
+<section data-background="img/StackIllustration/StackIllustration.003.jpeg">
+
+---
+
+<section data-background="img/StackIllustration/StackIllustration.004.jpeg">
+
+---
+
+<section data-background="img/StackIllustration/StackIllustration.005.jpeg">
+
+---
+
+<section data-background="img/StackIllustration/StackIllustration.006.jpeg">
+
+---
+
+<section data-background="img/StackIllustration/StackIllustration.007.jpeg">
+
+---
+
+<section data-background="img/StackIllustration/StackIllustration.008.jpeg">
+
+---
+
+<section data-background="img/StackIllustration/StackIllustration.009.jpeg">
+
+---
+
+<section data-background="img/StackIllustration/StackIllustration.010.jpeg">
 
 ---
 
@@ -478,7 +548,7 @@ def addAll(ns: N*): UIO[N] =
 type Stack = List[Any => IO[Any, Any]]
 
 type Interpreter =
-  PartialFunction[      // may interpret just part of the ADT
+  PartialFunction[    // may interpret just part of the ADT
     (
       IO[Any, Any],   // the next IO to interpret
       Any,            // the current input parameter
@@ -489,9 +559,9 @@ type Interpreter =
   ]
 
 sealed trait Interpretation
+case class  Step(v: Any, stack: Stack) extends Interpretation
+case class  Return(exit: Exit[Any, Any]) extends Interpretation
 case object Suspend extends Interpretation
-case class Return(exit: Exit[Any, Any]) extends Interpretation
-case class Step(v: Any, stack: Stack) extends Interpretation
 ```
 
 ---
@@ -585,7 +655,7 @@ class Fiber[E, A](
       case Return(exit)   =>
         result.synchronized {
           result = Some(exit)
-          listeners.foreach(_(typedExit))
+          listeners.foreach(_.apply(typedExit))
         }
     }
   }
@@ -681,7 +751,7 @@ case (f: ZIO.Fork[_, _, _], v, stack, parent) =>
   Step(fiber, stack)
 
 case (ea: ZIO.EffectAsync[_, _, _], _, stack, fiber) =>
-  val callback: IO[_, _]) => Unit =
+  val callback: IO[_, _] => Unit =
     io => fiber.schedule((), stack.prepended(_ => io))
 
   ea.register(callback) match {
@@ -695,13 +765,20 @@ case (ea: ZIO.EffectAsync[_, _, _], _, stack, fiber) =>
 ### Fiber.await
 
 ```scala
-override def await: UIO[Exit[E, A]] =
-  UIO.effectAsyncMaybe { k =>
-    result.fold[Option[UIO[Exit[E, A]]]] {
-      register(exit => k(UIO.succeed(exit)))
-      None
-    }(r => Some(UIO.succeed(r)))
-  }
+class Fiber[E, A](...) {
+
+  override def await: UIO[Exit[E, A]] =
+    UIO.effectAsyncMaybe { k: (IO[E, A] => Unit) =>
+      result.synchronized {
+        result.fold[Option[UIO[Exit[E, A]]]] {
+          register(exit => k(UIO.succeed(exit)))
+          None
+        }(r => Some(UIO.succeed(r)))
+      }
+    }
+
+  ...
+}
 ```
 
 ---
@@ -724,11 +801,11 @@ def addAll(ns: N*): UIO[N] =
       for {
         lsf <- addAll(l: _*).fork
         rsf <- addAll(r: _*).fork
+        ls <- lsf.join
+        rs <- rsf.join
 
         _ <- ZIO.yieldNow
         
-        ls <- lsf.join
-        rs <- rsf.join
         s <- AddMul.add(ls, rs)
       } yield s
   }
@@ -757,10 +834,10 @@ val doYield: Interpreter = {
 ### RR scheduling
 
 ```scala
-class FairInterpreter(underlying: Interpreter) 
+class FairInterpreter(underlying: Interpreter, max: Int = 10) 
     extends Interpreter {
-  val yieldAfter = 10
-  var count = yieldAfter
+
+  var count = max
 
   override def apply(
       param: (IO[Any, Any], Any, Stack, Fiber[Any, Any])
@@ -769,7 +846,7 @@ class FairInterpreter(underlying: Interpreter)
       case Suspend       => Suspend
       case r @ Return(_) => r
       case Step(v, stack) if count < 1 =>
-        count = yieldAfter
+        count = max
         param._4.schedule(v, stack)
         Suspend
       case s @ Step(_, _) =>
@@ -809,7 +886,11 @@ class Fold[R, E, E2, A, B](
   val failure: Cause[E] => ZIO[R, E2, B],
   val success: A => ZIO[R, E2, B]
 ) extends ZIO[R, E2, B]
-    with Function[A, ZIO[R, E2, B]] 
+    with Function[A, ZIO[R, E2, B]] {
+
+      def apply(v: A): ZIO[R, E2, B] = success(v)
+
+    }
 ```
 
 ---
@@ -861,6 +942,8 @@ case (fail: ZIO.Fail[_, _], _, stack, fiber) =>
 ---
 
 # THX
+
+<img  src="img/icon__filled--light@3x.png" style="max-width:20%"> 
 
 ### We are hiring
 

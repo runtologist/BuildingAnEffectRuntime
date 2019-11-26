@@ -16,9 +16,9 @@ object AddAllCoop {
         for {
           lsf <- addAll(l: _*).fork
           rsf <- addAll(r: _*).fork
-          _ <- ZIO.yieldNow
           ls <- lsf.join
           rs <- rsf.join
+          _ <- ZIO.yieldNow
           s <- AddMul.add(ls, rs)
         } yield s
 

@@ -11,7 +11,7 @@ class Runtime(interpreter: Fiber.Interpreter)(implicit ec: ExecutionContext) {
   def unsafeRunAsync[E, A](io: => IO[E, A])(k: Exit[E, A] => Unit): Unit = {
     val fiber = new Fiber(interpreter, ec)
     fiber.register(k)
-    fiber.schedule(io, List(_ => io))
+    fiber.schedule((), List(_ => io))
   }
 
   def unsafeRun[E, A](io: => IO[E, A]): Exit[E, A] = {
