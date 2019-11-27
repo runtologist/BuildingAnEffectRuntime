@@ -804,7 +804,7 @@ def addAll(ns: N*): UIO[N] =
 val doYield: Interpreter = {
   case (Yield, _, stack, fiber) =>
     fiber.schedule((), stack)
-    Left(None)
+    Suspend
 }
 ```
 
@@ -888,7 +888,7 @@ case (fold: ZIO.Fold, v, stack, _) =>
     stack
       .prepended(fold)
       .prepended((_: Any) => fold.value)
-  Right((v, newStack))
+  Step(v, newStack)
 
 case (fail: ZIO.Fail[_, _], _, stack, fiber) =>
   val cause = 
@@ -898,10 +898,10 @@ case (fail: ZIO.Fail[_, _], _, stack, fiber) =>
   tailWithFold match {
     case (handler: ZIO.Fold) :: tail =>
       val newStack = tail.prepended(handler.failure)
-      Right((cause, newStack))
+      Step(cause, newStack)
     case _ =>
       val exit = Exit.halt(cause)
-      Left(Some(exit))
+      Return(exit)
   }
 ```
 
