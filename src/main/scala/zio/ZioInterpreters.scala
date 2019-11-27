@@ -2,6 +2,7 @@ package zio
 
 import com.github.runtologist.runtime.{Fiber => PoorMansFiber}
 import com.github.runtologist.runtime.Fiber._
+import scala.util.Try
 
 object ZioInterpreters {
 
@@ -67,6 +68,16 @@ object ZioInterpreters {
           val exit = Exit.halt(cause)
           Return(exit)
       }
+  }
+
+  val effect: PoorMansFiber.Interpreter = {
+    case (et: ZIO.EffectTotal[_], _, stack, _) =>
+      Step(et.effect(), stack)
+    case (ep: ZIO.EffectPartial[_], _, stack, _) =>
+      Try(ep.effect()).fold(
+        e => Return(Exit.fail(e)),
+        a => Step(a, stack)
+      )
   }
 
 }

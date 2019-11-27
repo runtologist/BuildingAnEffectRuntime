@@ -11,7 +11,7 @@ import zio.UIO
 object DemoDivFold extends scala.App {
   implicit val ec = global
 
-  val interpreter = succeedFlatMap orElse failFold
+  val interpreter = succeedFlatMap orElse failFold orElse effect
 
   val runtime = new Runtime(interpreter)
 
@@ -22,8 +22,8 @@ object DemoDivFold extends scala.App {
           Cons(Cons(Zero)),
           Zero
         )
-        .flatMap(r => UIO.succeed(r.toString))
-        .catchAll(_ => UIO.succeed("Oh no, division by Zero!"))
+        .flatMap(r => UIO(r.toString))
+        .catchAll(_ => UIO("Oh no, division by Zero!"))
     )
   println(r)
 
