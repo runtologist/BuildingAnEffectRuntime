@@ -33,6 +33,5 @@ object DemoAddAllFair extends scala.App {
         .flatMap(_.await)
     )
   println(r)
-
   executor.shutdown()
 }

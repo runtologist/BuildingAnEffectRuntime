@@ -5,10 +5,12 @@ import com.github.runtologist.naturalNumbers.N._
 import com.github.runtologist.runtime.Runtime
 import zio.ZioInterpreters._
 
-import scala.concurrent.ExecutionContext.global
+import java.util.concurrent.Executors
+import scala.concurrent.ExecutionContext
 
 object DemoAddAll extends scala.App {
-  implicit val ec = global
+  val executor = Executors.newSingleThreadScheduledExecutor()
+  implicit val ec = ExecutionContext.fromExecutor(executor)
 
   val interpreter = succeedFlatMap orElse fail orElse forkEffectAsync
 
@@ -25,5 +27,5 @@ object DemoAddAll extends scala.App {
         )
     )
   println(r)
-
+  executor.shutdown()
 }
