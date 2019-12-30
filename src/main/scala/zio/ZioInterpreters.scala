@@ -9,7 +9,10 @@ object ZioInterpreters {
   type IOFn = Any => IO[Any, Any]
 
   val succeedFlatMap: PoorMansFiber.Interpreter = {
-    case (s: ZIO.Succeed[_], _, stack, _) => Step(s.value, stack)
+    case (s: ZIO.Succeed[_], _, stack, _) => // eager
+      Step(s.value, stack)
+    case (et: ZIO.EffectTotal[_], _, stack, _) => // lazy
+      Step(et.effect(), stack)
     case (fm: ZIO.FlatMap[_, _, _, _], v, stack, _) =>
       val newStack: PoorMansFiber.Stack = stack
         .prepended(fm.k.asInstanceOf[IOFn])
@@ -20,8 +23,12 @@ object ZioInterpreters {
   val fail: PoorMansFiber.Interpreter = {
     case (f: ZIO.Fail[_, _], _, _, fiber) =>
       val e = f.fill(() => ZTrace(fiberId = fiber.id, Nil, Nil, None))
-      val exit = Exit.halt(e)
-      Return(exit)
+      Return(Exit.halt(e))
+    case (ep: ZIO.EffectPartial[_], _, stack, _) =>
+      Try(ep.effect()).fold(
+        e => Return(Exit.fail(e)),
+        a => Step(a, stack)
+      )
   }
 
   val forkEffectAsync: PoorMansFiber.Interpreter = {
@@ -68,16 +75,6 @@ object ZioInterpreters {
           val exit = Exit.halt(cause)
           Return(exit)
       }
-  }
-
-  val effect: PoorMansFiber.Interpreter = {
-    case (et: ZIO.EffectTotal[_], _, stack, _) =>
-      Step(et.effect(), stack)
-    case (ep: ZIO.EffectPartial[_], _, stack, _) =>
-      Try(ep.effect()).fold(
-        e => Return(Exit.fail(e)),
-        a => Step(a, stack)
-      )
   }
 
 }

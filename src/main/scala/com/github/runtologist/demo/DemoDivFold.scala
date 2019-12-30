@@ -11,7 +11,7 @@ import zio.UIO
 object DemoDivFold extends scala.App {
   implicit val ec = global
 
-  val interpreter = succeedFlatMap orElse failFold orElse effect
+  val interpreter = succeedFlatMap orElse failFold
 
   val runtime = new Runtime(interpreter)
 
