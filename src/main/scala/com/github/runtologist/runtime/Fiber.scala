@@ -10,6 +10,8 @@ import zio.UIO
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext
 import scala.util.Try
+import zio.FiberRef
+import zio.ZTrace
 
 object Fiber {
 
@@ -40,11 +42,11 @@ object Fiber {
       Return(Exit.die(e))
   }
 
-  private[this] var nextId_ = 0
-  def nextId(): Int = {
-    val next = nextId_
-    nextId_ += 1
-    next
+  private[this] var nextSeqNo = 0L
+  def nextId(): ZioFiber.Id = {
+    val next = nextSeqNo
+    nextSeqNo += 1
+    ZioFiber.Id(System.currentTimeMillis, next)
   }
 
 }
@@ -54,27 +56,31 @@ class Fiber[E, A](
     val ec: ExecutionContext
 ) extends ZioFiber[E, A] {
 
-  val id: Int = nextId()
+  val _id: ZioFiber.Id = nextId()
+  override def id: zio.UIO[Option[zio.Fiber.Id]] = UIO.some(_id)
 
   @volatile private var result: Option[Exit[E, A]] = None
-  @volatile private var interrupted: Boolean = false
+  @volatile private var interrupted: Option[ZioFiber.Id] = None
   @volatile private var listeners: List[Exit[E, A] => Unit] = Nil
 
   def register(callback: Exit[E, A] => Unit): Unit =
     listeners ::= callback
 
-  override def interrupt: UIO[Exit[E, A]] = {
-    interrupted = true
+  override def interruptAs(fiberId: ZioFiber.Id): UIO[Exit[E, A]] = {
+    interrupted = Some(fiberId)
     await
   }
 
   @tailrec
   private def step(v: Any, stack: Fiber.Stack): Unit = {
-    val indent = fansi.Color.all(id + 3 % 16)(s"$id: " + ".".*(stack.length))
+    val indent =
+      fansi.Color.all(_id.seqNumber.toInt + 3 % 16)(
+        s"${_id.seqNumber}: " + ".".*(stack.length)
+      )
     println(s"$indent step $v")
     val safeInterpretation: Interpretation =
-      if (interrupted) {
-        Return(Exit.interrupt)
+      if (interrupted.nonEmpty) {
+        Return(Exit.interrupt(interrupted.get))
       } else {
         stack match {
           case Nil => Return(Exit.succeed(v.asInstanceOf[A]))
@@ -127,6 +133,16 @@ class Fiber[E, A](
 
   override def poll: UIO[Option[Exit[E, A]]] = UIO.succeed(result)
 
+  val _trace: ZTrace = ZTrace(_id, Nil, Nil, None)
+  override def trace: zio.UIO[Option[ZTrace]] = UIO.some(_trace)
+
   // not implemented
-  override def inheritFiberRefs: UIO[Unit] = UIO.unit
+  override def inheritRefs: UIO[Unit] = UIO.unit
+
+  override def children: zio.UIO[Iterable[ZioFiber[Any, Any]]] = UIO.never
+
+  override def getRef[T](ref: FiberRef[T]): zio.UIO[T] = UIO.never
+
+  override def status: zio.UIO[zio.Fiber.Status] = UIO.never
+
 }

@@ -22,7 +22,7 @@ object ZioInterpreters {
 
   val fail: PoorMansFiber.Interpreter = {
     case (f: ZIO.Fail[_, _], _, _, fiber) =>
-      val e = f.fill(() => ZTrace(fiberId = fiber.id, Nil, Nil, None))
+      val e = f.fill(() => fiber._trace)
       Return(Exit.halt(e))
     case (ep: ZIO.EffectPartial[_], _, stack, _) =>
       Try(ep.effect()).fold(
@@ -64,7 +64,7 @@ object ZioInterpreters {
           .prepended((_: Any) => fold.value.asInstanceOf[IO[Any, Any]])
       Step(v, newStack)
     case (fail: ZIO.Fail[_, _], _, stack, fiber) =>
-      val cause = fail.fill(() => ZTrace(fiberId = fiber.id, Nil, Nil, None))
+      val cause = fail.fill(() => fiber._trace)
       val tailWithFold =
         stack.dropWhile(f => !f.isInstanceOf[ZIO.Fold[_, _, _, _, _]])
       tailWithFold match {
