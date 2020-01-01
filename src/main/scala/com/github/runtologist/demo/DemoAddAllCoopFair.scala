@@ -1,7 +1,6 @@
 package com.github.runtologist.demo
 
 import com.github.runtologist.naturalNumbers._
-import com.github.runtologist.naturalNumbers.N._
 import com.github.runtologist.runtime.FairInterpreter
 import com.github.runtologist.runtime.Runtime
 import zio.ZioInterpreters._
@@ -23,12 +22,7 @@ object DemoAddAllFair extends scala.App {
   val r =
     runtime.unsafeRun(
       AddAllCoop
-        .addAll(
-          Cons(Cons(Zero)),
-          Cons(Cons(Cons(Zero))),
-          Cons(Cons(Cons(Cons(Zero)))),
-          Cons(Cons(Cons(Cons(Cons(Zero)))))
-        )
+        .addAll(N(2), N(3), N(4), N(5))
         .fork
         .flatMap(_.await)
     )

@@ -1,7 +1,6 @@
 package com.github.runtologist.demo
 
 import com.github.runtologist.naturalNumbers._
-import com.github.runtologist.naturalNumbers.N._
 import com.github.runtologist.runtime.Runtime
 import zio.ZioInterpreters._
 
@@ -18,10 +17,7 @@ object DemoDivFold extends scala.App {
   val r =
     runtime.unsafeRun(
       DivFold
-        .div(
-          Cons(Cons(Zero)),
-          Zero
-        )
+        .div(N(2), N(0))
         .flatMap(r => UIO(r.toString))
         .catchAll(_ => UIO("Oh no, division by Zero!"))
     )

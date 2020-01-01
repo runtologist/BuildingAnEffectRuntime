@@ -1,7 +1,6 @@
 package com.github.runtologist.demo
 
 import com.github.runtologist.naturalNumbers._
-import com.github.runtologist.naturalNumbers.N._
 import com.github.runtologist.runtime.Runtime
 import zio.ZioInterpreters._
 
@@ -16,11 +15,7 @@ object DemoDiv extends scala.App {
 
   val r =
     runtime.unsafeRun(
-      SubDiv
-        .div(
-          Cons(Cons(Zero)),
-          Zero
-        )
+      SubDiv.div(N(2), N(0))
     )
   println(r)
 

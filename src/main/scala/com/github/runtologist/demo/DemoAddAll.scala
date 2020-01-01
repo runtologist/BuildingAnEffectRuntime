@@ -1,7 +1,6 @@
 package com.github.runtologist.demo
 
 import com.github.runtologist.naturalNumbers._
-import com.github.runtologist.naturalNumbers.N._
 import com.github.runtologist.runtime.Runtime
 import zio.ZioInterpreters._
 
@@ -18,13 +17,7 @@ object DemoAddAll extends scala.App {
 
   val r =
     runtime.unsafeRun(
-      AddAll
-        .addAll(
-          Cons(Cons(Zero)),
-          Cons(Cons(Cons(Zero))),
-          Cons(Cons(Cons(Cons(Zero)))),
-          Cons(Cons(Cons(Cons(Cons(Zero)))))
-        )
+      AddAll.addAll(N(2), N(3), N(4), N(5))
     )
   println(r)
   executor.shutdown()

@@ -23,6 +23,13 @@ object N {
   // convenience
 
   @tailrec
+  def apply(n: Int, accu: N = Zero): N = {
+    if (n < 0) throw new IllegalStateException(s"$n is not a natural number.")
+    else if (n == 0) accu
+    else apply(n - 1, Cons(accu))
+  }
+
+  @tailrec
   def stringify(n: N, accu: Int = 0): String =
     n match {
       case Zero    => accu.toString()
