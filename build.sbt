@@ -10,7 +10,7 @@ lazy val `runtime` =
       libraryDependencies := Seq(
         "dev.zio" %% "zio" % zioVersion,
         "dev.zio" %% "zio-test" % zioVersion % Test,
-        "com.lihaoyi" %% "fansi" % "0.2.8"
+        "com.lihaoyi" %% "fansi" % "0.2.9"
       ),
       scalacOptions ++= Seq(
         "-deprecation",
