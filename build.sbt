@@ -2,7 +2,7 @@ ThisBuild / name := "poor-mans-runtime"
 ThisBuild / version := "0.1.0"
 ThisBuild / scalaVersion := "2.13.1"
 
-val zioVersion = "1.0.0-RC17"
+val zioVersion = "1.0.0-RC18"
 
 lazy val `runtime` =
   (project in file("."))
