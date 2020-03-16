@@ -77,4 +77,8 @@ object ZioInterpreters {
       }
   }
 
+  val descriptor: PoorMansFiber.Interpreter = {
+    case (d: ZIO.Descriptor[_, _, _], v, stack, fiber) =>
+      Step(v, stack.prepended(_ => d.k(fiber.descriptor)))
+  }
 }

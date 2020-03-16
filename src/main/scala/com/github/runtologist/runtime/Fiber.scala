@@ -12,6 +12,7 @@ import scala.concurrent.ExecutionContext
 import scala.util.Try
 import zio.FiberRef
 import zio.ZTrace
+import zio.Fiber.Descriptor
 
 object Fiber {
 
@@ -53,34 +54,40 @@ object Fiber {
 
 class Fiber[E, A](
     val interpreter: Fiber.Interpreter,
-    val ec: ExecutionContext
+    val ec: ExecutionContext,
+    val printDebug: Boolean = false
 ) extends ZioFiber[E, A] {
 
   val _id: ZioFiber.Id = nextId()
   override def id: zio.UIO[Option[zio.Fiber.Id]] = UIO.some(_id)
 
   @volatile private var result: Option[Exit[E, A]] = None
-  @volatile private var interrupted: Option[ZioFiber.Id] = None
+  @volatile private var interrupted: Set[ZioFiber.Id] = Set.empty
   @volatile private var listeners: List[Exit[E, A] => Unit] = Nil
 
   def register(callback: Exit[E, A] => Unit): Unit =
     listeners ::= callback
 
   override def interruptAs(fiberId: ZioFiber.Id): UIO[Exit[E, A]] = {
-    interrupted = Some(fiberId)
+    interrupted += fiberId
     await
   }
 
-  @tailrec
-  private def step(v: Any, stack: Fiber.Stack): Unit = {
+  private def debug(msg: String, stack: Stack): Unit = if (printDebug) {
     val indent =
       fansi.Color.all(_id.seqNumber.toInt + 3 % 16)(
         s"${_id.seqNumber}: " + ".".*(stack.length)
       )
-    println(s"$indent step $v")
+    println(s"$indent $msg")
+  }
+
+  @tailrec
+  private def step(v: Any, stack: Fiber.Stack): Unit = {
+
+    debug(s"step $v", stack)
     val safeInterpretation: Interpretation =
       if (interrupted.nonEmpty) {
-        Return(Exit.interrupt(interrupted.get))
+        Return(Exit.interrupt(interrupted.head))
       } else {
         stack match {
           case Nil => Return(Exit.succeed(v.asInstanceOf[A]))
@@ -88,10 +95,11 @@ class Fiber[E, A](
             Try(f(v)).fold(
               e => Return(Exit.die(e)),
               io => {
-                println(
-                  s"$indent interpreting " + fansi.Color.all(io.tag + 5)(
+                debug(
+                  s"interpreting " + fansi.Color.all(io.tag + 5)(
                     io.getClass().getSimpleName()
-                  )
+                  ),
+                  stack
                 )
                 interpreter.applyOrElse(
                   (io, v, tail, this.asInstanceOf[Fiber[Any, Any]]),
@@ -103,9 +111,9 @@ class Fiber[E, A](
       }
     safeInterpretation match {
       case Suspend =>
-        println(s"$indent suspending")
+        debug("suspending", stack)
       case Return(exit) =>
-        println(s"$indent done: $exit")
+        debug(s"done: $exit", stack)
         val typedExit = exit.asInstanceOf[Exit[E, A]]
         result.synchronized {
           result = Some(typedExit)
@@ -131,12 +139,21 @@ class Fiber[E, A](
       }
     }
 
+  def descriptor: Descriptor =
+    Descriptor(
+      _id,
+      zio.Fiber.Status.Done,
+      interrupted,
+      zio.InterruptStatus.Interruptible,
+      UIO.succeed(Iterable.empty),
+      null
+    )
+
   override def poll: UIO[Option[Exit[E, A]]] = UIO.succeed(result)
 
   val _trace: ZTrace = ZTrace(_id, Nil, Nil, None)
   override def trace: zio.UIO[Option[ZTrace]] = UIO.some(_trace)
 
-  // not implemented
   override def inheritRefs: UIO[Unit] = UIO.unit
 
   override def children: zio.UIO[Iterable[ZioFiber[Any, Any]]] = UIO.never

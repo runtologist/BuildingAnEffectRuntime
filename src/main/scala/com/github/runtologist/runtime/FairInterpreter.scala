@@ -17,7 +17,7 @@ object FairInterpreter {
           case r @ Return(_) => r
           case Step(v, stack) if count < 1 =>
             val fiber = param._4
-            println(s"Suspending Fiber ${fiber.id} to be fair.")
+            //println(s"Suspending Fiber ${fiber.id} to be fair.")
             count = yieldAfter
             fiber.schedule(v, stack)
             Suspend
