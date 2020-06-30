@@ -57,22 +57,17 @@ trait NOps {
       case _                    => false
     }
 
-  // def plus(n: N, m: N): N =
-  //   m match {
-  //     case Zero     => n
-  //     case Cons(mm) => Cons(plus(n, mm))
-  //   }
-
-  final def plus(n: N, m: N): UIO[N] =
+  final def plus(n: N, m: N): UIO[N] = {
     m match {
       case Zero     => UIO.succeed(n)
-      case Cons(mm) => plus(n, mm).map(Cons)
+      case Cons(mm) => UIO.unit *> plus(n, mm).map(Cons)
     }
+  }
 
   final def times(n: N, m: N): UIO[N] =
     m match {
       case Zero     => UIO.succeed(Zero)
-      case Cons(mm) => times(n, mm).flatMap(o => plus(o, n))
+      case Cons(mm) => UIO.unit *> times(n, mm).flatMap(o => plus(o, n))
     }
 
   @tailrec
