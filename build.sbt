@@ -9,7 +9,7 @@ lazy val `runtime` =
     .settings(
       libraryDependencies := Seq(
         "dev.zio" %% "zio" % zioVersion,
-        "com.lihaoyi" %% "fansi" % "0.2.9",
+        "com.lihaoyi" %% "fansi" % "0.2.14",
         "org.scalatest" %% "scalatest" % "3.2.2" % "test"
       ),
       scalacOptions ++= Seq(
