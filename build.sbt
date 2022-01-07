@@ -1,8 +1,10 @@
 ThisBuild / name := "poor-mans-runtime"
 ThisBuild / version := "0.1.0"
-ThisBuild / scalaVersion := "2.13.3"
+ThisBuild / scalaVersion := "2.13.7"
 
-val zioVersion = "1.0.0-RC21-2"
+val zioVersion = "1.0.0-RC17"
+
+Global / onChangedBuildSource := ReloadOnSourceChanges
 
 lazy val `runtime` =
   (project in file("."))

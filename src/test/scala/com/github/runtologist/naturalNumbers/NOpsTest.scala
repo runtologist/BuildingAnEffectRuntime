@@ -1,18 +1,18 @@
 package com.github.runtologist.naturalNumbers
 
+import com.github.runtologist.naturalNumbers.Err._
+import com.github.runtologist.runtime.FairInterpreter
 import com.github.runtologist.runtime.Runtime
+import java.util.concurrent.Executors
+import org.scalatest.concurrent.Eventually
+import org.scalatest.funsuite.AnyFunSuite
+import org.scalatest.time.Second
+import org.scalatest.time.Span
+import scala.concurrent.ExecutionContext
 import zio.Exit
-import Err._
+import zio.IO
 import zio.ZioInterpreters
 import zio.ZioInterpreters._
-import java.util.concurrent.Executors
-import scala.concurrent.ExecutionContext
-import com.github.runtologist.runtime.FairInterpreter
-import org.scalatest.funsuite.AnyFunSuite
-import zio.IO
-import org.scalatest.concurrent.Eventually
-import org.scalatest.time.Span
-import org.scalatest.time.Second
 
 class NOpsTest extends AnyFunSuite with Eventually {
 
@@ -30,7 +30,7 @@ class NOpsTest extends AnyFunSuite with Eventually {
   val runtime = new Runtime(interpreter)
 
   test("plus") {
-    val r = runtime.unsafeRun(N.plus(N(2), N(3)))
+    val r = runtime.unsafeRun(N.plus(N(2), N(3)), debug = true)
     assert(r === Exit.Success(N(5)))
   }
 
@@ -93,7 +93,7 @@ class NOpsTest extends AnyFunSuite with Eventually {
     var r = Option.empty[String]
     val io =
       for {
-        f1 <- IO.unit.forever.fork
+        f1 <- IO.unit.forever.fork // note the missing yield
         f2 <- IO.effectTotal[Any]({ x = true }).flatMap(_ => f1.interrupt).fork
         _ <- f2.await
         _ <- f1.await

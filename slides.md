@@ -13,28 +13,12 @@ revealOptions:
 ---
 
 ## Build yourself an effect system
-
+ 
 ---
 
-### Simon Schenk
+<!-- ---
 
-<img  src="img/icon__filled--light@3x.png" style="max-width:20%"> 
-
-CTO at Risk42 (https://risk42.com)
-
- ----
-
-###### https://github.com/zio/interop-reactive-streams
-
-###### https://github.com/zio/telemetry
-
- ----
-
-simon@risk42.com - @runtologist
-
----
-
-### Why ZIO?
+### Why Functional Effects?
 
 "Read an `R` from the environment and run an effect returning a result of `A` or an Error of `E`."
 
@@ -50,31 +34,136 @@ Kleisli[F[_], R, Either[E, A]]
 ZIO[R, E, A]
 ```
 
----
+--- -->
 
 ### Why this talk?
 
-* 1kloc Runtime
+* Functional programming is useful.
+* ZIO has a several kloc Runtime, but:
 * complex but not complicated
 * Strip away non essentials
 * prefer readability over performance
-* On the slides: simplified types, might not compile
+* ... and it's not too bad after all
 
 ---
 
 ### Agenda
 
-* Functional Effects, Errors vs. Defects
-* Running Effects
+* Functional Programming in Scala
+* Functional Effects (FE)
 * Example Domain: Natural Numbers 
-* Build Fiber runtime driving Interpreters
+* Build Runtime driving Interpreters for FE
 * Implement Interpreters
   * syncronous happy path
-  ---
-  * error channel
-  * asynchronicity
-  * cooperative and fair scheduling
-  * error recovery
+  * (error channel)
+  * (asynchronicity)
+  * [cooperative and fair scheduling]
+  * [error recovery]
+
+---
+
+### Functional Programming...
+
+* Programming with functions, statements
+* Functions as first class citizens
+* Pure functions do not have side effects, referential transparency
+* Failure modeled in the return type
+* Higher order functions: Functions on functions
+* Immutable data structures
+* Tail recursion
+* Pattern matching
+* Partial functions
+* Lazy evaluation
+
+---
+
+### ...in Scala (1)
+
+```scala
+
+// functions as first class citizens
+def timesDef(a: Int, b: Int): Int = a * b
+val times: (Int, Int) => Int = (a, b) => a * b
+
+// tail recursion, higher order functions and pattern matching
+@tailrec
+def foldLeft[A](as: List[A], accu: A, f: (A, A) => A): A = 
+  as match {
+    case Nil => accu
+    case head :: tail => foldLeft(tail, f(zero, head), f)
+  }
+
+foldLeft(1 :: 2 :: 3 :: Nil), 1, times) // 6
+```
+
+---
+
+### ...in Scala (2)
+
+```scala
+// "Algebraic Data Type"
+sealed trait Option[A]
+case object None extends Option[Nothing]
+case class Some[A](value: A) extends Option[A]
+
+// errors as values
+def div(a: Int, b: Int): Option[Int] = 
+  if (b != 0) Some(a/b) else None
+
+div(4/0) // None
+div(4/2) // Some(1)
+
+// partial functions
+def partialDiv: PartialFunction[(Int, Int), Int] = {
+  case (a, b) if (b != 0) => a / b
+}
+
+partialDiv.isDefined(4, 0) // false
+partialDiv(4,2) // 2
+```
+
+---
+
+### ...in Scala (3)
+
+```scala
+// map, flatMap
+def map[A, B, F[_]](self: F[A], f: A => B): F[B]
+def flatMap[A, B, F[_]](self: F[A], f: A => F[B]): F[B]
+
+sealed trait Option[A] {
+  def map[B](f: A => B): Option[B]
+  def flatMap[B](f: A => Option[B]): Option[B]
+}
+
+// for comprehensions
+def maybeMult(ao: Option[Int], bo: Option[Int]): Option[Int] = 
+  for {
+    a <- ao
+    b <- bo
+  } yield a * b
+  // rewritten to 
+  // ao.flatMap(a => bo.map(b => a*b))
+
+maybeMult(Some(3), None) // None
+```
+
+---
+
+### Error 
+
+Anticipated failure mode:
+
+* None in case of division by zero
+
+### vs Defect
+
+Unexpected Failure, or a bug:
+
+* failure to handle division by zero
+* `java.lang.OutOfMemory`
+
+
 
 ---
 
@@ -83,6 +172,10 @@ ZIO[R, E, A]
 Immutable *value* that *models side-effects*
 
 ```scala
+// effect, that when run results in a result of type A 
+// or an error of type E
+type IO[E, A] 
+
 // does nothing, just describes writing to console, can't fail
 val effect: IO[Nothing, Unit] = 
   IO(println("What's your name?"))
@@ -93,11 +186,13 @@ val effect: IO[Nothing, Unit] =
 ### vs Future
 
 ```scala
-// does nothing, just describes writing to console, can't fail
+// Does nothing, just describes writing to console, can't fail.
+// (We tell the compiler we know this cannot fail.) 
 val effect: IO[Nothing, Unit] = 
   IO(println("What's your name?"))
 
-// immediately starts executing, maybe fails?
+// immediately starts executing, maybe fails.
+// (implicit error type Throwable, can be error or defect)
 val future: Future[Unit] = 
   Future(println("What's your name?"))
 ```
@@ -171,56 +266,6 @@ runtime.unsafeRun(effect)
 
 ---
 
-### Fiber = Lightweight thread implemented in Library
-
-* Like thread:
-  * Will run in parallel. 
-  * fork, join/await, interrupt
-* Unlike Thread:
-  * No mapping to OS level threads, works on ScalaJS
-  * Cheap. Run 10s of 1000s concurrently.
-  * Fine grained control, extensible
-
----
-
-### Concurrency != Parallelism
-
-> Concurrency is the composition of independently executing processes, while parallelism is the simultaneous execution of (possibly related) computations.
-
-###### https://howtodoinjava.com/java/multi-threading/concurrency-vs-parallelism/
-
-
----
-
-### Errors
-
-Expected Failure Modes
-
-```scala
-trait NameError
-case object TooShort extends NameError
-
-val readName: IO[NameError, String] = 
-  for {
-    _    <- IO(println("What's your name?"))
-    name <- Task(console.readLine)
-              .refineOrDie { case e: IOError => e }
-              .catchAll(_ => "")
-    _    <- IO.fail(TooShort).when(name.length < 3)
-  } yield name
-
-val r: Exit[NameError, String] = 
-  runtime.unsafeRunSync(readName)
-```
-
----
-
-### vs Defects
-
-<img src="img/bad-bug.svg" style="width:50%"/>
-
----
-
 ### Interruption
 
 ```scala
@@ -237,12 +282,26 @@ def race[E, A](io1: IO[E, A], io2: IO[E, A]): IO[E, A] =
 
 ---
 
-### Exit
+### Fiber 
+
+* Lightweight thread implemented in Library
+* Like thread:
+  * Will run concurrently. 
+  * fork, join/await, interrupt
+* Unlike thread:
+  * No mapping to OS level threads, works on ScalaJS
+  * Cheap. Run 10s of 1000s concurrently.
+  * Fine grained control, extensible
+
+
+---
+
+### Result of running a Fiber
 
 ```scala
 sealed trait Exit[+E, +A]
-case class Success[A](v: A)           extends Exit[Nothing, A]
-case class Failure[E](c: zio.Cause[E])extends Exit[E, Nothing]
+case class Success[A](v: A)            extends Exit[Nothing, A]
+case class Failure[E](c: zio.Cause[E]) extends Exit[E, Nothing]
 
 sealed trait Cause[+E]
 case class  Fail[E](value: E)     extends Cause[E]
@@ -335,18 +394,18 @@ sealed trait Err
 case object Neg extends Err
 case object Div0 extends Err
 
-def sub(n: N, m: N): IO[Neg.type, N] =
+def sub(n: N, m: N): IO[Neg, N] =
   (n, m) match {
     case (_, Zero)            => IO.succeed(n)
     case (Zero, _)            => IO.fail(Neg)
     case (Cons(nn), Cons(mm)) => sub(nn, mm)
   }
 
-def div(n: N, m: N): IO[Div0.type, N] 
+def div(n: N, m: N): IO[Div0, N] 
 ```
 
 ---
-
+<!-- 
 ### Parallel addAll
 
 ```scala
@@ -366,7 +425,7 @@ def addAll(ns: N*): UIO[N] =
   }
 ```
 
----
+--- 
 
 ### Parallel Cooperative addAll
 
@@ -388,7 +447,7 @@ def addAll(ns: N*): UIO[N] =
   }
 ```
 
----
+---  -->
 
 # Let's go!
 
@@ -397,39 +456,26 @@ def addAll(ns: N*): UIO[N] =
 
 ---
 
- ### Take Representation of Effects from ZIO
-
- ```scala
-// Moral equivalent of Kleisli[F[_], R, Either[E, A]]
-trait ZIO[R, E, A]
-
-// Produce an A or fails with E.
-// Moral equivalent of F[Either[E, A]]
-type  IO[E, A] = ZIO[Any, E, A] 
-
-// Produce an A, never fail
-// Moral equivalent of F[A]
-type  UIO[A] = IO[Nothing, A] 
- ```
-
----
-
-### Effect ADT
+### Take Representation of Effects from ZIO
 
 
 ```scala
-trait IO[E, A] {
-
+sealed trait IO[E, A] {
   def flatMap[E1 >: E, B](k: A => IO[E1, B]): IO[E1, B] =
     new ZIO.FlatMap(self, k)
-
   def succeed[A](a: A): UIO[A] = new ZIO.Succeed(a)
-
-  def fork: IO[R, Nothing, Fiber[E, A]] = new ZIO.Fork(self)
-
+  def fork: UIO[Fiber[E, A]] = new ZIO.Fork(self)
   ...
-
 }
+
+case class Succeed[A](value: A) extends UIO[A]
+case class FlatMap[E, A](io: IO[E, A], k:  A => IO[E, A]) 
+  extends IO[E, A] 
+case class Fork[+E, +A] extends IO[Nothing, Fiber[E,A]]
+...
+
+// Produce an A, never fail
+type  UIO[+A] = IO[Nothing, A] 
 ```
 
 ---
@@ -455,7 +501,7 @@ RaceWith
 ```scala
 * FlatMap        * Succeed        * Fail                   
 * Fold           * EffectAsync    * Fork          
-* Yield          EffectTotal      InterruptStatus        
+Yield            EffectTotal      InterruptStatus        
 CheckInterrupt   EffectPartial    DaemonStatus           
 CheckDaemon      Descriptor       Lock                   
 Access           Provide          EffectSuspendPartialWith 
@@ -580,11 +626,12 @@ class FlatMap[E, A](
 
 ```scala
 val succeedFlatMap: Interpreter = {
-  case (s: Succeed, _, stack, _) => Step(s.value, stack)
-  case (fm: FlatMap, v, stack, _) =>
-    val newStack: Stack = stack
-      .prepended(fm.k)
-      .prepended(_ => fm.io)
+  case (Succeed(value), _, stack, _) => Step(value, stack)
+  case (FlatMap(io, k), v, stack, _) =>
+    val newStack: Stack = 
+      stack
+        .prepended(k)
+        .prepended(_ => io)
     Step(v, newStack)
 }
 ```
@@ -620,19 +667,20 @@ class Fiber[E, A](
 ---
 
 ```scala
+  val effectiveInterpreter = interpreter.orElse(Fiber.notImplemented)
+
   @tailrec
   private def step(v: Any, stack: Fiber.Stack): Unit = {
     val safeInterpretation: Interpretation =
       stack match {
         case Nil => Return(Exit.succeed(v.asInstanceOf[A]))
         case f :: tail =>
-          Try(f(v)).fold(
-            e  => Return(Exit.die(e)),
-            io => interpreter.applyOrElse(
-                    (io, v, tail, this), 
-                    Fiber.notImplemented
-                  )
-          )
+          try {
+            val io = f(v)
+            effectiveInterpreter((io, v, tail, this))
+          } catch {
+            case e => Return(Exit.die(e))
+          }
       }
     safeInterpretation match {
       case Suspend        =>
@@ -930,8 +978,3 @@ case (fail: ZIO.Fail[_, _], _, stack, fiber) =>
 
 ###### https://github.com/runtologist/BuildingAnEffectRuntime
 
-<img  src="img/icon__filled--light@3x.png" style="max-width:20%"> 
-
-### We are hiring
-
-##### https://risk42.com/
