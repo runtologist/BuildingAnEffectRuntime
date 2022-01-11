@@ -30,13 +30,13 @@ class NOpsTest extends AnyFunSuite with Eventually {
   val runtime = new Runtime(interpreter)
 
   test("plus") {
-    val r = runtime.unsafeRun(N.plus(N(2), N(3)), debug = true)
+    val r = runtime.unsafeRun(N.plus(N(2), N(3))) //, debug = true)
     assert(r === Exit.Success(N(5)))
   }
 
   test("plus is stack safe") {
-    val r = runtime.unsafeRun(N.plus(N(10000), N(10000)))
-    assert(r === Exit.Success(N(20000)))
+    val r = runtime.unsafeRun(N.plus(N(10000), N(10000)).map(_.toString()))
+    assert(r === Exit.Success("20000"))
   }
 
   test("times") {

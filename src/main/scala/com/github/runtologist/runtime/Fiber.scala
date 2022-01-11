@@ -73,14 +73,14 @@ class Fiber[E, A](
     await
   }
 
-  // private def debug(msg: String, stack: Stack): Unit =
-  //   if (printDebug) {
-  //     val indent =
-  //       fansi.Color.all(_id.seqNumber.toInt + 3 % 16)(
-  //         s"${_id.seqNumber}: " + ".".*(stack.length)
-  //       )
-  //     println(s"$indent $msg")
-  //   }
+  private def debug(msg: String, stack: Stack): Unit =
+    if (printDebug) {
+      val indent =
+        fansi.Color.all(_id.seqNumber.toInt + 3 % 16)(
+          s"${_id.seqNumber}: " + ".".*(stack.length)
+        )
+      println(s"$indent $msg")
+    }
 
   @tailrec
   private def step(v: Any, stack: Fiber.Stack): Unit = {
@@ -96,12 +96,12 @@ class Fiber[E, A](
             Try(f(v)).fold(
               e => Return(Exit.die(e)),
               io => {
-                // debug(
-                //   s"interpreting " + fansi.Color.all(io.tag + 5)(
-                //     io.getClass().getSimpleName()
-                //   ),
-                //   stack
-                // )
+                debug(
+                  s"interpreting " + fansi.Color.all(io.tag + 5)(
+                    io.getClass().getSimpleName()
+                  ),
+                  stack
+                )
                 interpreter.applyOrElse(
                   (io, v, tail, this.asInstanceOf[Fiber[Any, Any]]),
                   Fiber.notImplemented

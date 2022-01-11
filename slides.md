@@ -338,7 +338,7 @@ case class Cons(n: N) extends N
 def equals(n: N, m: N): Boolean =
   (n, m) match {
     case (Zero, Zero)         => true
-    case (Cons(nn), Cons(mm)) => equals(nn, mm)
+    case (Cons(predn), Cons(predm)) => equals(predn, predm)
     case _                    => false
   }
 ```
@@ -352,14 +352,14 @@ def equals(n: N, m: N): Boolean =
 def add(n: N, m: N): N =
   m match {
     case Zero     => n
-    case Cons(mm) => Cons(add(n, mm))
+    case Cons(pred) => Cons(add(n, pred))
   }
 
 // not tail recursive!
 def mul(n: N, m: N): N =
   m match {
     case Zero     => Zero
-    case Cons(mm) => add(mul(n, mm), n)
+    case Cons(pred) => add(mul(n, pred), n)
   }
 ```
 
@@ -367,21 +367,18 @@ def mul(n: N, m: N): N =
 
 ### Stack Safe Encoding
 
-```scala
-type  UIO[A] = IO[Nothing, A] 
-```
 
 ```scala
-def add(n: N, m: N): UIO[N] =
+def add(n: N, m: N): IO[Nothing, N] =
   m match {
-    case Zero     => UIO.succeed(n)
-    case Cons(mm) => add(n, mm).map(Cons)
+    case Zero     => IO.succeed(n)
+    case Cons(pred) => add(n, pred).map(Cons)
   }
 
-def mul(n: N, m: N): UIO[N] =
+def mul(n: N, m: N): IO[Nothing, N] =
   m match {
-    case Zero     => UIO.succeed(Zero)
-    case Cons(mm) => mul(n, mm).flatMap(o => add(o, n))
+    case Zero     => IO.succeed(Zero)
+    case Cons(pred) => mul(n, pred).flatMap(o => add(o, n))
   }
 ```
 
@@ -398,7 +395,7 @@ def sub(n: N, m: N): IO[Neg, N] =
   (n, m) match {
     case (_, Zero)            => IO.succeed(n)
     case (Zero, _)            => IO.fail(Neg)
-    case (Cons(nn), Cons(mm)) => sub(nn, mm)
+    case (Cons(predn), Cons(predm)) => sub(predn, predm)
   }
 
 def div(n: N, m: N): IO[Div0, N] 
@@ -406,26 +403,6 @@ def div(n: N, m: N): IO[Div0, N]
 
 ---
 <!-- 
-### Parallel addAll
-
-```scala
-def addAll(ns: N*): UIO[N] =
-  ns.toList match {
-    case Nil      => UIO.succeed(Zero)
-    case n :: Nil => UIO.succeed(n)
-    case list =>
-      val (l, r) = list.splitAt(ns.length / 2)
-      for {
-        lsf <- addAll(l: _*).fork
-        rsf <- addAll(r: _*).fork
-        ls <- lsf.join
-        rs <- rsf.join
-        s <- add(ls, rs)
-      } yield s
-  }
-```
-
---- 
 
 ### Parallel Cooperative addAll
 
@@ -463,19 +440,16 @@ def addAll(ns: N*): UIO[N] =
 sealed trait IO[E, A] {
   def flatMap[E1 >: E, B](k: A => IO[E1, B]): IO[E1, B] =
     new ZIO.FlatMap(self, k)
-  def succeed[A](a: A): UIO[A] = new ZIO.Succeed(a)
-  def fork: UIO[Fiber[E, A]] = new ZIO.Fork(self)
+  def succeed[A](a: A): IO[Nothing, A] = new ZIO.Succeed(a)
+  def fork: IO[Nothing, Fiber[E, A]] = new ZIO.Fork(self)
   ...
 }
 
-case class Succeed[A](value: A) extends UIO[A]
+case class Succeed[A](value: A) extends IO[Nothing, A]
 case class FlatMap[E, A](io: IO[E, A], k:  A => IO[E, A]) 
   extends IO[E, A] 
 case class Fork[+E, +A] extends IO[Nothing, Fiber[E,A]]
 ...
-
-// Produce an A, never fail
-type  UIO[+A] = IO[Nothing, A] 
 ```
 
 ---
@@ -517,18 +491,25 @@ RaceWith
 ```scala
 type Stack = List[Any => IO[Any, Any]]
 
+def Interpreter = (
+      IO[Any, Any],   // the next IO to interpret
+      Any,            // the current input parameter
+      Stack           // the remainder of the stack
+    ) => Interpretation
+
+sealed trait Interpretation
+case class  Step(v: Any, stack: Stack) extends Interpretation
+case class  Return(exit: Exit[Any, Any]) extends Interpretation
+// case object Suspend extends Interpretation
+
 @tailrec
-private def step(v: Any, stack: Fiber.Stack): Exit
+def step(
+      v: Any, 
+      stack: Stack, 
+      interpreter: Interpreter
+    ): Exit
 ```
 
------
-
-```scala
-class Succeed[A](val value: A) extends UIO[A]
-class FlatMap[E, A](
-    val io:      IO[E, A], 
-    val k:  A => IO[E, A]
-  ) extends IO[E, A] 
 ```
 
 ---
@@ -617,7 +598,7 @@ val notImplemented: Interpreter = {
 A Trampoline
 
 ```scala
-class Succeed[A](val value: A) extends UIO[A]
+class Succeed[A](val value: A) extends IO[Nothing, A]
 class FlatMap[E, A](
     val io:      IO[E, A], 
     val k:  A => IO[E, A]
@@ -645,14 +626,14 @@ class Fiber[E, A](
     val interpreter: Fiber.Interpreter,
     val ec: ExecutionContext
 ) {   
-  @volatile private var interrupted: Boolean = false
-  @volatile private var result: Option[Exit[E, A]] = None
-  @volatile private var listeners: List[Exit[E, A] => Unit] = Nil
+  private var interrupted: Boolean = false
+  private var result: Option[Exit[E, A]] = None
+  private var listeners: List[Exit[E, A] => Unit] = Nil
 
   def register(callback: Exit[E, A] => Unit): Unit =
     listeners ::= callback
 
-  def interrupt: UIO[Unit] = interrupted = true
+  def interrupt: IO[Nothing, Unit] = interrupted = true
 
   def schedule(v: Any, stack: Fiber.Stack): Unit =
     ec.execute(() => step(v, stack))
@@ -667,7 +648,8 @@ class Fiber[E, A](
 ---
 
 ```scala
-  val effectiveInterpreter = interpreter.orElse(Fiber.notImplemented)
+  val effectiveInterpreter = 
+    interpreter.orElse(Fiber.notImplemented)
 
   @tailrec
   private def step(v: Any, stack: Fiber.Stack): Unit = {
@@ -686,10 +668,8 @@ class Fiber[E, A](
       case Suspend        =>
       case Step(v, stack) => step(v, stack)
       case Return(exit)   =>
-        result.synchronized {
-          result = Some(exit)
-          listeners.foreach(_.apply(typedExit))
-        }
+        result = Some(exit)
+        listeners.foreach(_.apply(typedExit))
     }
   }
 }
@@ -724,15 +704,11 @@ class Runtime(interpreter: Interpreter)
 
 ---
 
-### AddDemo
+### Demo
 
-`bloop run runtime -m com.github.runtologist.demo.DemoAdd`
-
----
-
-### DivDemo
-
-`bloop run runtime -m com.github.runtologist.demo.DemoDiv`
+```bash
+bloop test runtime --only "*NOpsTest" --watch
+```
 
 ---
 
@@ -741,49 +717,62 @@ class Runtime(interpreter: Interpreter)
 On error, fail right away, no recovery for now.
 
 ```scala
-class Fail[E, A](val fill: (() => ZTrace) => Cause[E]) 
-    extends IO[E, A]
+class Fail[E](_ => Cause[E]) extends IO[E, Nothing]
 ```
 
 ```scala
-case (f: Fail[_, _], _, _, fiber) =>
-  // tracing not implemented
-  val e: Cause[_] = 
-    f.fill(() => ZTrace(fiberId = fiber.id, Nil, Nil, None))
+case (f: Fail[_], _, _, fiber) =>
   val exit: Exit[_, _] = Exit.halt(cause)
   Return(exit)
 ```
 
 ---
 
-### DivDemo
+### Demo
 
-`bloop run runtime -m com.github.runtologist.demo.DemoDiv`
+```bash
+bloop test runtime --only "*NOpsTest" --watch
+```
 
 ---
 
-### AddAllDemo
+### Parallel addAll
 
-`bloop run runtime -m com.github.runtologist.demo.DemoAddAll`
+```scala
+def addAll(ns: N*): UIO[N] =
+  ns.toList match {
+    case Nil      => UIO.succeed(Zero)
+    case n :: Nil => UIO.succeed(n)
+    case list =>
+      val (l, r) = list.splitAt(ns.length / 2)
+      for {
+        lsf <- addAll(l: _*).fork
+        rsf <- addAll(r: _*).fork
+        ls <- lsf.join
+        rs <- rsf.join
+        s <- add(ls, rs)
+      } yield s
+  }
+```
 
 ---
 
 ### fork and await
 
 ```scala
-class Fork[E, A](val value: IO[E, A]) extends UIO[Fiber[E, A]]
+class Fork[E, A](io: IO[E, A]) extends IO[Nothing, Fiber[E, A]]
 class EffectAsync[E, A](
-    val register: (IO[E, A] => Unit) => Option[IO[E, A]]
-) extends IO[E, A]
+        (k: IO[E, A] => Unit) => Option[IO[E, A]]
+      ) extends IO[E, A]
 ```
 
 ```scala
-case (f: ZIO.Fork[_, _, _], v, stack, parent) =>
+case (f: Fork[_, _], v, stack, parent) =>
   val fiber = new Fiber(parent.interpreter, parent.ec)
-  fiber.schedule(v, List(_ => f.value))
+  fiber.schedule(v, List(_ => f.io))
   Step(fiber, stack)
 
-case (ea: ZIO.EffectAsync[_, _, _], _, stack, fiber) =>
+case (ea: EffectAsync[_, _, _], _, stack, fiber) =>
   val callback: IO[_, _] => Unit =
     io => fiber.schedule((), stack.prepended(_ => io))
 
@@ -795,28 +784,35 @@ case (ea: ZIO.EffectAsync[_, _, _], _, stack, fiber) =>
 
 ---
 
-### Fiber.await
+### Fiber.await (~ join)
 
 ```scala
 class Fiber[E, A](...) {
 
-  override def await: UIO[Exit[E, A]] =
-    UIO.effectAsyncMaybe { k: (IO[E, A] => Unit) =>
-      result.synchronized {
-        result.fold[Option[UIO[Exit[E, A]]]] {
-          register(exit => k(UIO.succeed(exit)))
-          None
-        }(r => Some(UIO.succeed(r)))
-      }
+  override def await: IO[Nothing, Exit[E, A]] =
+    IO.effectAsyncMaybe { k: (IO[E, A] => Unit) =>
+      result.fold {
+        register(exit => k(IO.succeed(exit)))
+        None
+      } { r => Some(IO.succeed(r)) }
     }
 
   ...
 }
 ```
 
----
+------
 
-### Walkthrough join
+```scala
+case (ea: EffectAsync[_, _, _], _, stack, fiber) =>
+  val callback: IO[_, _] => Unit =
+    io => fiber.schedule((), stack.prepended(_ => io))
+
+  ea.register(callback) match {
+    case None     => Suspend
+    case Some(io) => Step((), stack.prepended(_ => io))
+  }
+```
 
 ---
 
@@ -825,10 +821,10 @@ class Fiber[E, A](...) {
 First step: Cooperative yielding
 
 ```scala
-def addAll(ns: N*): UIO[N] =
+def addAll(ns: N*): IO[Nothing, N] =
   ns.toList match {
-    case Nil      => UIO.succeed(Zero)
-    case n :: Nil => UIO.succeed(n)
+    case Nil      => IO.succeed(Zero)
+    case n :: Nil => IO.succeed(n)
     case list =>
       val (l, r) = list.splitAt(ns.length / 2)
       for {
@@ -860,7 +856,10 @@ val doYield: Interpreter = {
 
 ### CoopDemo
 
-`bloop run runtime -m com.github.runtologist.demo.DemoAllAddCoop`
+
+```bash
+bloop test runtime --only "*NOpsTest" --watch
+```
 
 ---
 
@@ -893,7 +892,10 @@ class FairInterpreter(underlying: Interpreter, max: Int = 10)
 
 ### FullDemo
 
-`bloop run runtime -m com.github.runtologist.demo.DemoAddAllFair`
+
+```bash
+bloop test runtime --only "*NOpsTest" --watch
+```
 
 ---
 
@@ -905,8 +907,8 @@ val program: IO[Nothing, String] =
     Cons(Cons(Zero)),
     Zero
   )
-  .flatMap(r => UIO.succeed(r.toString))
-  .catchAll(_ => UIO.succeed("Oh no, division by Zero!"))
+  .flatMap(r => IO.succeed(r.toString))
+  .catchAll(_ => IO.succeed("Oh no, division by Zero!"))
 ```
 
 ---
@@ -931,24 +933,20 @@ class Fold[R, E, E2, A, B](
 ### Interpret Fold and Fail
 
 ```scala
-case (fold: ZIO.Fold, v, stack, _) =>
+case (fold: Fold, v, stack, _) =>
   val newStack =
     stack
       .prepended(fold)
       .prepended((_: Any) => fold.value)
   Step(v, newStack)
 
-case (fail: ZIO.Fail[_, _], _, stack, fiber) =>
-  val cause = 
-    fail.fill(() => ZTrace(fiberId = fiber.id, Nil, Nil, None))
-  val tailWithFold =
-    stack.dropWhile(f => !f.isInstanceOf[ZIO.Fold])
-  tailWithFold match {
+case (fail: Fail[_, _], _, stack, fiber) =>
+  stack.dropWhile(f => !f.isInstanceOf[ZIO.Fold]) match {
     case (handler: ZIO.Fold) :: tail =>
       val newStack = tail.prepended(handler.failure)
       Step(cause, newStack)
     case _ =>
-      val exit = Exit.halt(cause)
+      val exit = Exit.halt(fail)
       Return(exit)
   }
 ```
@@ -957,7 +955,9 @@ case (fail: ZIO.Fail[_, _], _, stack, fiber) =>
 
 ### ErrorHandlingDemo
 
-`bloop run runtime -m com.github.runtologist.demo.DemoDivFold`
+```bash
+bloop test runtime --only "*NOpsTest" --watch
+```
 
 ---
 
@@ -971,6 +971,7 @@ case (fail: ZIO.Fail[_, _], _, stack, fiber) =>
 * EC pinning (really!)
 * Fiber Dumps
 * Manged Resources
+* ...
 
 ---
 
