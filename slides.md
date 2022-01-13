@@ -966,11 +966,10 @@ bloop test runtime --only "*NOpsTest" --watch
 
 * Fiber Traces
 * Fiber Locals
-* Environmental Effects
 * Interruptible/Uninterruptible regions
-* EC pinning (really!)
-* Fiber Dumps
 * Manged Resources
+* Environmental Effects
+* Fiber Dumps
 * ...
 
 ---

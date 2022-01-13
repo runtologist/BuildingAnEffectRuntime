@@ -22,10 +22,10 @@ class NOpsTest extends AnyFunSuite with Eventually {
   implicit val ec = ExecutionContext.fromExecutor(executor)
 
   val interpreter =
-    FairInterpreter.make(
-      yieldAfter = 10,
-      succeedFlatMap orElse ZioInterpreters.failFold orElse forkEffectAsync orElse doYield orElse descriptor
-    )
+    // FairInterpreter.make(
+    //   yieldAfter = 10,
+    succeedFlatMap // orElse ZioInterpreters.failFold orElse forkEffectAsync orElse doYield orElse descriptor
+  // )
 
   val runtime = new Runtime(interpreter)
 

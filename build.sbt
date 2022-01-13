@@ -16,7 +16,7 @@ lazy val `runtime` =
       ),
       scalacOptions ++= Seq(
         "-deprecation",
-        "-Xfatal-warnings",
+        // "-Xfatal-warnings",
         "-encoding",
         "utf8",
         "-deprecation",
